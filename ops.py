@@ -19,6 +19,35 @@ def DilatedCausalConv1d(inputs, kernel_size, channels, dilation_rate=1, name='',
 		conv = conv + bias
 	return conv
 
+def ResidualDilationLayer(inputs, kernel_size, dilation_channels, skip_channels, dilation_rate=1, name='', dtype=tf.float32, use_bias=True):
+
+	# input -> causal conv -> tanh
+	with tf.variable_scope(name + '_filter'):
+		filter_conv = DilatedCausalConv1d(inputs, kernel_size, dilation_channels, dilation_rate, name, dtype, use_bias)
+		filter_conv = tf.nn.tanh(filter_conv)
+
+	# input -> causal conv -> sigmoid
+	with tf.variable_scope(name + '_gate'):
+		gated_conv = DilatedCausalConv1d(inputs, kernel_size, dilation_channels, dilation_rate, name, dtype, use_bias)
+		gated_conv = tf.nn.sigmoid(filter_conv)
+
+
+	combined = filter_conv * gated_conv
+
+	# 1x1 convolution
+	residual = tf.layers.conv1d(combined, filters=dilation_channels, kernel_size=1, strides=1, padding='SAME')
+	dense = inputs + residual
+
+
+	# 1x1 convolution
+	skip = tf.layers.conv1d(combined, filters=skip_channels, kernel_size=1, strides=1, padding='SAME')
+
+	return dense, skip
+
+
+
+
+
 
 def _flatten(x):
 	return np.reshape(x, [-1, np.prod(list(x.shape)[1:])])
@@ -36,6 +65,12 @@ if __name__ == '__main__':
 
 	inputs = tf.placeholder(tf.float32, [None, 8, 1])
 	conv1 = DilatedCausalConv1d(inputs, kernel_size=3, channels=4, dilation_rate=4, name='causal_conv1')
+
+	dense, skip = ResidualDilationLayer(inputs, kernel_size=2, dilation_channels=8, skip_channels=4, dilation_rate=4, name='dilation_layer1')
+
+	total = dense + skip
+
+	print(tf.get_collection(tf.GraphKeys.VARIABLES))
 
 	with tf.Session() as sess:
 		sess.run(tf.global_variables_initializer())
@@ -56,5 +91,9 @@ if __name__ == '__main__':
 
 		out = sess.run(conv1, {inputs: np.random.random((1, 8, 1))})
 		print(out)
-		out = sess.run(conv1, {inputs: np.ones((1, 8, 1))})
+		out = sess.run(dense, {inputs: np.ones((1, 8, 1))})
+		print(out)
+		out = sess.run(skip, {inputs: np.ones((1, 8, 1))})
+		print(out)
+		out = sess.run(total, {inputs: np.ones((1, 8, 1))})
 		print(out)

@@ -4,12 +4,15 @@ import numpy as np
 from ops import *
 
 class WaveNet(object):
-	def __init__(self, input_size, output_size, filter_width=2, num_channels=32, num_layers=10, name='WaveNet', learning_rate=0.001):
+	def __init__(self, input_size, output_size, filter_width=2, dilation_channels=32, skip_channels=256, 
+		output_channels=256, num_layers=10, name='WaveNet', learning_rate=0.001):
 
 		self.input_size = input_size
 		self.output_size = output_size
 		self.filter_width = filter_width
-		self.num_channels = num_channels
+		self.dilation_channels = dilation_channels
+		self.skip_channels = skip_channels
+		self.output_channels = output_channels
 		self.num_layers = num_layers
 		
 		with tf.variable_scope(name):
@@ -17,26 +20,48 @@ class WaveNet(object):
 			self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
 
 
+		print(self.inputs)
+		print(self.logits)
+		print(self.out)
+
 		self.targets = tf.placeholder(tf.float32, [None, self.output_size])
-		self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.targets))
+
+		labels = tf.expand_dims(self.targets, 1)
+
+
+		self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=labels))
 
 		self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
 	def createNetwork(self):
 		inputs = tf.placeholder(tf.float32, [None, self.input_size])
 		h = tf.expand_dims(inputs, 2)
+
+
+		skip_layers = []
+
+		h = DilatedCausalConv1d(h, self.filter_width, channels=self.dilation_channels, dilation_rate=1, name='causal_conv')
+
 		for i in range(self.num_layers):
 			dilation = 2 ** i
-			name = 'conv_{}'.format(i)
-			h = DilatedCausalConv1d(h, self.filter_width, channels=self.num_channels, dilation_rate=dilation, name=name)
-			h = tf.nn.relu(h)
+			name = 'dilated_conv_{}'.format(i)
+			h, skip = ResidualDilationLayer(h, kernel_size=self.filter_width, dilation_channels=self.dilation_channels, 
+				skip_channels=self.skip_channels, dilation_rate=dilation, name=name)
+			skip_layers.append(skip)
 
-		# Collapse to 1 channel
-		h = tf.reshape(DilatedCausalConv1d(h, 1, channels=1, dilation_rate=1, name='collapse_conv'), [-1, self.input_size])
 
-		logits = tf.layers.dense(h, self.output_size)
-		out = tf.nn.sigmoid(logits)
-		print(logits, out)
+		total = tf.reduce_sum(skip_layers, axis=0)
+		total = tf.nn.relu(total)
+
+		total = tf.layers.conv1d(total, filters=self.skip_channels, kernel_size=1, strides=1, padding='SAME')
+		total = tf.nn.relu(total)
+
+		total = tf.layers.conv1d(total, filters=self.output_channels, kernel_size=1, strides=1, padding='SAME')
+
+		logits = tf.nn.pool(total, window_shape=(self.input_size,), strides=(self.input_size,), pooling_type='AVG', padding='SAME')
+
+		out = tf.nn.softmax(logits)
+		
 		return inputs, logits, out
 
 

@@ -73,9 +73,11 @@ class AudioData(object):
 
 				self.train_files[fullpath] = {'data': None, 'label': label}
 
+	@property
+	def classes(self):
+		return len(self.labelToIdx)
 
 	def Load(self, fullpath, files):
-
 		data, label = None, None
 
 		if fullpath in files:
@@ -95,7 +97,6 @@ class AudioData(object):
 
 
 	def _GetBatch(self, batch_size, files):
-
 		fullpaths = np.random.choice(list(files.keys()), batch_size)
 		data, labels = zip(*[self.Load(p, files) for p in fullpaths])
 
