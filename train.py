@@ -17,10 +17,11 @@ if __name__ == '__main__':
 	parser.add_argument('--logdir', type=str, default='events/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
 	parser.add_argument('--classifier', action='store_true', help='Train a classifier wavenet')
 	parser.add_argument('--siamese', action='store_true', help='Train a siamese wavenet')
+	parser.add_argument('--test', action='store_true', help='Test mode')
 	args = parser.parse_args()
 
 	batch_size = 1
-	num_steps = 300000
+	num_steps = 100000
 	print_steps = 100
 
 	last_checkpoint_time = time.time()
@@ -57,25 +58,35 @@ if __name__ == '__main__':
 					except (tf.errors.NotFoundError):
 						print('Could not find checkpoint at %s', checkpoint_state.model_checkpoint_path)
 
-			for global_step in range(num_steps):
-				x, y = audio_data.TrainBatch(batch_size)
-				#x, y = generate_wave_batch(batch_size, num_samples, combos=False)
-				loss = network.train(x, y)
+			if not args.test:
 
-				if global_step % print_steps == 0:
+				for global_step in range(num_steps):
+					x, y = audio_data.TrainBatch(batch_size)
+					#x, y = generate_wave_batch(batch_size, num_samples, combos=False)
+					loss = network.train(x, y)
+
+					if global_step % print_steps == 0:
+						labels = network.predict(x)
+						#print(loss, np.sum(np.abs(y - np.round(labels))))
+						print('Step: {:6d} | Loss: {:.4f} | Correct Pred: {:.4f} | Real: {} | Predicted: {}'.format(global_step, loss, np.sum(y * labels), 
+							audio_data.getWord(np.argmax(y)), audio_data.getWord(np.argmax(labels))))
+
+
+					# Checkpoint once per minute
+					if time.time() - last_checkpoint_time > 60:
+						if not os.path.isdir(args.logdir):
+							os.makedirs(args.logdir)
+						saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
+						last_checkpoint_time = time.time()
+
+				saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
+			else:
+				for global_step in range(100):
+					x, y = audio_data.TrainBatch(1)
 					labels = network.predict(x)
-					#print(loss, np.sum(np.abs(y - np.round(labels))))
-					print('Step: {:6d} | Loss: {:.4f} | Correct Pred: {:.4f}'.format(global_step, loss, np.sum(y * labels)))
 
-
-				# Checkpoint once per minute
-				if time.time() - last_checkpoint_time > 60:
-					if not os.path.isdir(args.logdir):
-						os.makedirs(args.logdir)
-					saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
-					last_checkpoint_time = time.time()
-
-			saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
+					print('Step: {:6d} | Correct Pred: {:.4f} | Real: {} | Predicted: {}'.format(global_step, np.sum(y * labels), 
+						audio_data.getWord(np.argmax(y)), audio_data.getWord(np.argmax(labels))))
 
 
 	if args.siamese:

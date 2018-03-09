@@ -53,7 +53,7 @@ class WaveNet(object):
 
 		total = tf.layers.conv1d(total, filters=self.output_channels, kernel_size=1, strides=1, padding='SAME')
 
-		logits = tf.nn.pool(total, window_shape=(self.input_size,), strides=(self.input_size,), pooling_type='AVG', padding='SAME')
+		logits = tf.nn.pool(total, window_shape=(self.input_size,), strides=(1,), pooling_type='AVG', padding='VALID')
 
 		out = tf.nn.softmax(logits)
 		

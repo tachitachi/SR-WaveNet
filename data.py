@@ -73,6 +73,9 @@ class AudioData(object):
 
 				self.train_files[fullpath] = {'data': None, 'label': label}
 
+	def getWord(self, idx):
+		return self.idxToLabel[idx]
+
 	@property
 	def classes(self):
 		return len(self.labelToIdx)
