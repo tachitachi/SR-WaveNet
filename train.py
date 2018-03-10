@@ -81,12 +81,51 @@ if __name__ == '__main__':
 
 				saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
 			else:
-				for global_step in range(100):
-					x, y = audio_data.TrainBatch(1)
-					labels = network.predict(x)
 
-					print('Step: {:6d} | Correct Pred: {:.4f} | Real: {} | Predicted: {}'.format(global_step, np.sum(y * labels), 
-						audio_data.getWord(np.argmax(y)), audio_data.getWord(np.argmax(labels))))
+
+				if False:
+					for global_step in range(num_steps):
+						x, y = audio_data.TestBatch(1)
+						labels = network.predict(x)
+
+						print('Step: {:6d} | Correct Pred: {:.4f} | Real: {} | Predicted: {}'.format(global_step, np.sum(y * labels), 
+							audio_data.getWord(np.argmax(y)), audio_data.getWord(np.argmax(labels))))
+
+
+				if True:
+					corrects = {}
+					wrongs = {}
+					correct_count = 0
+					wrong_count = 0
+					for filepath in audio_data.test_files:
+						data, label = audio_data.Load(filepath, audio_data.test_files)
+
+						x = np.array([data])
+
+
+						labels = network.predict(x)
+
+						pred_word = audio_data.idxToLabel[np.argmax(labels)]
+						real_word = audio_data.idxToLabel[label]
+
+						if real_word not in corrects:
+							corrects[real_word] = 0
+						if real_word not in wrongs:
+							wrongs[real_word] = 0
+
+						if np.argmax(labels) == label:
+							corrects[real_word] += 1
+							correct_count += 1
+						else:
+							wrongs[real_word] += 1
+							wrong_count += 1
+
+
+					print('Correct: {:d} | Wrong: {:d} | Total: {:d} | % Correct: {:.3f}'.format(correct_count, wrong_count, correct_count + wrong_count, 
+						correct_count / (correct_count + wrong_count)))
+
+					print('Correct', corrects)
+					print('Wrongs', wrongs)
 
 
 	if args.siamese:

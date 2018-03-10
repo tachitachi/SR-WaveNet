@@ -96,14 +96,14 @@ class AudioData(object):
 			difference = self.num_samples - data.shape[0]
 			data = np.pad(data, [0, difference], 'constant')
 
-		return data[:self.num_samples], self.labelToIdx[label]
+		return data[:self.num_samples] / 32767, self.labelToIdx[label]
 
 
 	def _GetBatch(self, batch_size, files):
 		fullpaths = np.random.choice(list(files.keys()), batch_size)
 		data, labels = zip(*[self.Load(p, files) for p in fullpaths])
 
-		data = np.stack(data, axis=0) / 32767
+		data = np.stack(data, axis=0)
 
 		one_hot = np.zeros((batch_size, len(self.labelToIdx)))
 		labels = np.array(labels, dtype=np.int32)
