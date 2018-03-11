@@ -29,7 +29,7 @@ class WaveNet(object):
 		self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
 	def createNetwork(self):
-		inputs = tf.placeholder(tf.float32, [None, self.input_size])
+		inputs = tf.placeholder(tf.float32, [None, None])
 		h = tf.expand_dims(inputs, 2)
 
 
