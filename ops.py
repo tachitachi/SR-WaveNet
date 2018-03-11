@@ -45,7 +45,12 @@ def ResidualDilationLayer(inputs, kernel_size, dilation_channels, skip_channels,
 	return dense, skip
 
 
+def ResizeNearestNeighbor1d(inputs, output_size):
+	input_size = inputs.shape[1]
+	reshaped = tf.expand_dims(tf.expand_dims(inputs, 0), 3)
+	resized = tf.image.resize_nearest_neighbor(reshaped, [input_size, output_size])
 
+	return tf.squeeze(resized, axis=[0, 3])
 
 
 
