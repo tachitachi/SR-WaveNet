@@ -87,16 +87,18 @@ class AudioData(object):
 			filedata = files[fullpath]
 			if filedata['data'] is None:
 				r, d = wavfile.read(fullpath)
-				filedata['data'] = d
+
+				if d.shape[0] < self.num_samples:
+					# pad end with 0s
+					difference = self.num_samples - d.shape[0]
+					d = np.pad(d, [0, difference], 'constant')
+				d = d[:self.num_samples]
+
+				filedata['data'] = d / 32767.0
 			data = filedata['data']
 			label = filedata['label']
 
-		if data.shape[0] < self.num_samples:
-			# pad end with 0s
-			difference = self.num_samples - data.shape[0]
-			data = np.pad(data, [0, difference], 'constant')
-
-		return data[:self.num_samples] / 32767, self.labelToIdx[label]
+		return data, self.labelToIdx[label]
 
 
 	def _GetBatch(self, batch_size, files):

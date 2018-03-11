@@ -28,8 +28,6 @@ if __name__ == '__main__':
 
 	if args.classifier:
 
-		#
-
 		audio_data = AudioData()
 		num_samples = audio_data.num_samples
 		num_classes = audio_data.classes
@@ -37,10 +35,8 @@ if __name__ == '__main__':
 		dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
                   1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
-#		num_samples = 16000
-#		num_classes = 4
 
-		network = WaveNet(num_samples, num_classes, dilations, dilation_channels=32, skip_channels=128, output_channels=num_classes)
+		network = WaveNet(num_samples, num_classes, dilations, dilation_channels=32, skip_channels=128, output_channels=num_classes, learning_rate=0.001)
 
 		saver = tf.train.Saver()
 
@@ -54,7 +50,6 @@ if __name__ == '__main__':
 					try:
 						saver.restore(sess, checkpoint_state.model_checkpoint_path)
 						print('Restoring previous session')
-						#step_count = policy.global_step.eval(sess)
 					except (tf.errors.NotFoundError):
 						print('Could not find checkpoint at %s', checkpoint_state.model_checkpoint_path)
 
@@ -62,7 +57,6 @@ if __name__ == '__main__':
 
 				for global_step in range(num_steps):
 					x, y = audio_data.TrainBatch(batch_size)
-					#x, y = generate_wave_batch(batch_size, num_samples, combos=False)
 					loss = network.train(x, y)
 
 					if global_step % print_steps == 0:
@@ -120,9 +114,8 @@ if __name__ == '__main__':
 							wrongs[real_word] += 1
 							wrong_count += 1
 
-
 					print('Correct: {:d} | Wrong: {:d} | Total: {:d} | % Correct: {:.3f}'.format(correct_count, wrong_count, correct_count + wrong_count, 
-						correct_count / (correct_count + wrong_count)))
+						correct_count / float(correct_count + wrong_count)))
 
 					print('Correct', corrects)
 					print('Wrongs', wrongs)
