@@ -18,7 +18,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	batch_size = 1
-	num_steps = 100000
+	num_steps = 10000
 	print_steps = 100
 
 	last_checkpoint_time = time.time()
@@ -29,7 +29,7 @@ if __name__ == '__main__':
 
 	quantization_channels = 256
 
-	num_samples = 100
+	num_samples = 5120
 	num_classes = 4
 	quantization_channels = 256
 
@@ -39,7 +39,7 @@ if __name__ == '__main__':
 
     # input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 	# output_channels=256, latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
-	network = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, output_size=quantization_channels, dilations=dilations, pool_stride=10)
+	network = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, output_size=quantization_channels, dilations=dilations, pool_stride=512)
 
 	saver = tf.train.Saver()
 
@@ -61,18 +61,25 @@ if __name__ == '__main__':
 			for global_step in range(num_steps):
 				#x, y = audio_data.TrainBatch(batch_size)
 
-				x, y = generate_wave_batch(batch_size, num_samples)
+				x, y = generate_wave_batch(batch_size, num_samples, combos=True)
 
-				print(x.shape, y.shape)
+				loss = network.train(x, y)
 
 
-				encoding = network.encode(x, y)
-				print(encoding.shape)
+				if global_step % print_steps == 0:
+					print(global_step, loss)
 
-				reconstruction = network.reconstruct(x, y)
-				print(reconstruction, reconstruction.shape)
-
-				break
+#					regen = network.reconstruct(x, y)
+#
+#					plt.figure(1)
+#					plt.subplot(211)
+#
+#					plt.plot(np.arange(num_samples), x[0])
+#
+#					plt.subplot(212)
+#					plt.plot(np.arange(num_samples), regen[0])
+#
+#					plt.show()
 
 				# Checkpoint once per minute
 				if time.time() - last_checkpoint_time > 60:
@@ -82,3 +89,22 @@ if __name__ == '__main__':
 					last_checkpoint_time = time.time()
 
 			saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
+
+		else:
+
+			for global_step in range(10):
+				#x, y = audio_data.TrainBatch(batch_size)
+
+				x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+
+				regen = network.reconstruct(x, y)
+
+				plt.figure(1)
+				plt.subplot(211)
+
+				plt.plot(np.arange(num_samples), x[0])
+
+				plt.subplot(212)
+				plt.plot(np.arange(num_samples), regen[0])
+
+				plt.show()

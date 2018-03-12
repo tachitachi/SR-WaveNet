@@ -4,7 +4,8 @@ import scipy.signal
 
 def generate_random_wave(length, combos=False):
 	funcs = [Sine, Square, Sawtooth, Triangle]
-	frequency = np.random.randint(50) + 2
+
+	#frequency = 20
 
 	labels = np.zeros(len(funcs))
 
@@ -19,6 +20,8 @@ def generate_random_wave(length, combos=False):
 	wave = None
 
 	for choice in choices:
+
+		frequency = np.random.randint(20) + 2
 		if wave is None:
 			wave = funcs[choice](frequency=frequency, duration=1, sample_rate=length)
 		else:
@@ -26,7 +29,7 @@ def generate_random_wave(length, combos=False):
 		labels[choice] = 1
 
 	# Add in a small amount of gaussian noise
-	wave += np.random.normal(0, 0.2, wave.shape)
+	wave += np.random.normal(0, 0.1, wave.shape)
 
 	return wave, labels
 

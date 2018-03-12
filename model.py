@@ -88,17 +88,23 @@ class WaveNetAutoEncoder(object):
 		self.pool_stride = pool_stride
 		
 		with tf.variable_scope(name):
-			self.inputs, self.conditions, self.encoding, self.out = self.createNetwork()
+			self.inputs, self.conditions, self.encoding, self.logits, self.out = self.createNetwork()
 			self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
 
 		#self.targets = tf.placeholder(tf.float32, [None, self.output_size])
 
+		self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
+
+		self.targets = tf.one_hot(mu_law_encode(self.inputs, self.output_size), self.output_size)
+
+		#self.loss = tf.reduce_mean((self.targets - self.out) ** 2)
+
 		#labels = tf.expand_dims(self.targets, 1)
 
 
-		#self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=labels))
+		self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.targets))
 
-		#self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
+		self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
 
 	def createEncoder(self, h, reuse=False):
@@ -177,12 +183,12 @@ class WaveNetAutoEncoder(object):
 
 
 		
-		return inputs, conditions, encoding, out
+		return inputs, conditions, encoding, logits, out
 
 
-	def train(self, inputs, targets):
+	def train(self, inputs, conditions):
 		sess = tf.get_default_session()
-		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.targets: targets})
+		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.conditions: conditions})
 		return loss
 
 	def encode(self, inputs, conditions):
@@ -191,4 +197,8 @@ class WaveNetAutoEncoder(object):
 
 	def reconstruct(self, inputs, conditions):
 		sess = tf.get_default_session()
-		return sess.run(self.out, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		return sess.run(self.toFloat, feed_dict={self.inputs: inputs, self.conditions: conditions})
+
+	def mu_law(self, inputs, conditions):
+		sess = tf.get_default_session()
+		return sess.run(self.targets, feed_dict={self.inputs: inputs, self.conditions: conditions})

@@ -78,7 +78,29 @@ def RightShift(inputs, shift_size=1):
 	p = tf.pad(inputs, [[0, 0], [shift_size, 0], [0, 0]])
 	return tf.slice(p, [0, 0, 0], [-1, tf.shape(p)[1]-shift_size, inputs.shape[2]])
 
+def mu_law_encode(audio, quantization_channels):
+	'''Quantizes waveform amplitudes.'''
+	with tf.name_scope('encode'):
+		mu = tf.to_float(quantization_channels - 1)
+		# Perform mu-law companding transformation (ITU-T, 1988).
+		# Minimum operation is here to deal with rare large amplitudes caused
+		# by resampling.
+		safe_audio_abs = tf.minimum(tf.abs(audio), 1.0)
+		magnitude = tf.log1p(mu * safe_audio_abs) / tf.log1p(mu)
+		signal = tf.sign(audio) * magnitude
+		# Quantize signal to the specified number of levels.
+		return tf.to_int32((signal + 1) / 2 * mu + 0.5)
 
+
+def mu_law_decode(output, quantization_channels):
+	'''Recovers waveform from quantized values.'''
+	with tf.name_scope('decode'):
+		mu = quantization_channels - 1
+		# Map values back to [-1, 1].
+		signal = 2 * (tf.to_float(output) / mu) - 1
+		# Perform inverse of mu-law transformation.
+		magnitude = (1 / mu) * ((1 + mu)**abs(signal) - 1)
+		return tf.sign(signal) * magnitude
 
 def _flatten(x):
 	return np.reshape(x, [-1, np.prod(list(x.shape)[1:])])
