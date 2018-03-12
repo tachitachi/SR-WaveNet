@@ -5,7 +5,7 @@ import re
 import numpy as np
 
 class AudioData(object):
-	def __init__(self, datadir='data', num_samples=16000):
+	def __init__(self, datadir='data', num_samples=16384):
 		self.datadir = datadir
 		self.num_samples = num_samples
 

@@ -44,13 +44,39 @@ def ResidualDilationLayer(inputs, kernel_size, dilation_channels, skip_channels,
 
 	return dense, skip
 
+def ResidualDilationLayerNC(inputs, kernel_size, dilation_channels, skip_channels, dilation_rate=1, name='', dtype=tf.float32, use_bias=True):
+	x = tf.nn.relu(inputs)
+	with tf.variable_scope(name + '_NC'):
+		x = tf.layers.conv1d(x, filters=dilation_channels, kernel_size=kernel_size, strides=1, padding='SAME')
+		x = tf.nn.relu(x)
 
-def ResizeNearestNeighbor1d(inputs, output_size):
-	input_size = inputs.shape[1]
-	reshaped = tf.expand_dims(tf.expand_dims(inputs, 0), 3)
-	resized = tf.image.resize_nearest_neighbor(reshaped, [input_size, output_size])
+	residual = tf.layers.conv1d(x, filters=dilation_channels, kernel_size=1, strides=1, padding='SAME')
+	skip = tf.layers.conv1d(x, filters=skip_channels, kernel_size=1, strides=1, padding='SAME')
 
-	return tf.squeeze(resized, axis=[0, 3])
+	return residual, skip
+
+
+
+
+
+# [batch_size, embedding_size, embedding_channels]
+def ResizeEmbeddingNearestNeighbor(inputs, output_size):
+	embedding_size = inputs.shape[1]
+	embedding_channels = inputs.shape[2]
+
+	# Add fake channel size of 1
+	reshaped = tf.expand_dims(inputs, 3)
+
+
+	resized = tf.image.resize_nearest_neighbor(reshaped, [output_size, embedding_channels])
+
+	return tf.squeeze(resized, axis=[3])
+
+
+# Right shift a 3D tensor
+def RightShift(inputs, shift_size=1):
+	p = tf.pad(inputs, [[0, 0], [shift_size, 0], [0, 0]])
+	return tf.slice(p, [0, 0, 0], [-1, tf.shape(p)[1]-shift_size, inputs.shape[2]])
 
 
 
