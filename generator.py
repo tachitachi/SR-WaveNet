@@ -15,6 +15,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--logdir', type=str, default='events/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
 	parser.add_argument('--test', action='store_true', help='Test mode')
+	parser.add_argument('--gen', action='store_true', help='Generate mode')
 	args = parser.parse_args()
 
 	batch_size = 1
@@ -92,19 +93,27 @@ if __name__ == '__main__':
 
 		else:
 
-			for global_step in range(10):
-				#x, y = audio_data.TrainBatch(batch_size)
 
-				x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+			if not args.gen:
 
-				regen = network.reconstruct(x, y)
+				for global_step in range(10):
+					#x, y = audio_data.TrainBatch(batch_size)
 
-				plt.figure(1)
-				plt.subplot(211)
+					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
 
-				plt.plot(np.arange(num_samples), x[0])
+					regen = network.reconstruct(x, y)
 
-				plt.subplot(212)
-				plt.plot(np.arange(num_samples), regen[0])
+					plt.figure(1)
+					plt.subplot(211)
 
-				plt.show()
+					plt.plot(np.arange(num_samples), x[0])
+
+					plt.subplot(212)
+					plt.plot(np.arange(num_samples), regen[0])
+
+					plt.show()
+
+			else:
+					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+
+					encoding = network.encode(x, y)

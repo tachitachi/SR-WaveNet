@@ -31,6 +31,8 @@ def generate_random_wave(length, combos=False):
 	# Add in a small amount of gaussian noise
 	wave += np.random.normal(0, 0.1, wave.shape)
 
+	wave = Normalize(wave)
+
 	return wave, labels
 
 def generate_wave_batch(batch_size, length, combos=False):
@@ -103,6 +105,8 @@ def Normalize(t, min_val=0, max_val=1):
 
 	target_range = max_val - min_val
 	return ((t - current_min) / current_range) * target_range + min_val
+
+
 
 
 # TODO: white, brown, pink
