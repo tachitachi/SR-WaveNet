@@ -19,7 +19,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	batch_size = 1
-	num_steps = 10000
+	num_steps = 100000
 	print_steps = 100
 
 	last_checkpoint_time = time.time()
@@ -31,11 +31,12 @@ if __name__ == '__main__':
 	quantization_channels = 256
 
 	num_samples = 5120
-	num_classes = 4
+	num_classes = 10
 	quantization_channels = 256
 
 
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
+              1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
     # input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
@@ -100,8 +101,52 @@ if __name__ == '__main__':
 					#x, y = audio_data.TrainBatch(batch_size)
 
 					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+					x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
 
 					regen = network.reconstruct(x, y)
+					encoding = network.encode(x2, y2) 
+
+					regen2 = network.reconstruct_with_encoding(x2, y2, encoding)
+
+					plt.figure(1)
+					plt.subplot(221)
+
+					plt.plot(np.arange(num_samples), x[0])
+
+					plt.subplot(222)
+					plt.plot(np.arange(num_samples), x2[0])
+
+					plt.subplot(223)
+					plt.plot(np.arange(num_samples), regen[0])
+
+					plt.subplot(224)
+					plt.plot(np.arange(num_samples), regen2[0])
+
+					plt.show()
+
+			else:
+					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+					#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
+
+					encoding = network.encode(x, y)
+
+					x_so_far = np.zeros((1, num_samples))
+
+
+
+					x_so_far = network.reconstruct_with_encoding(x_so_far, y, encoding)
+
+					print(x_so_far, x_so_far.shape)
+
+					for i in range(num_samples):
+						x_so_far[:,i:] = 0
+						#print(x_so_far[:,:100])
+						#print(network.get_logits(x_so_far, y, encoding))
+						x_so_far[:, i] = network.reconstruct_with_encoding(x_so_far, y, encoding)[:, i]
+
+
+					x_so_far[:,i:] = 0
+					regen = x_so_far
 
 					plt.figure(1)
 					plt.subplot(211)
@@ -113,7 +158,4 @@ if __name__ == '__main__':
 
 					plt.show()
 
-			else:
-					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
-
-					encoding = network.encode(x, y)
+					#for i in range(num_samples):

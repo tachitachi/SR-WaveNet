@@ -102,6 +102,12 @@ def mu_law_decode(output, quantization_channels):
 		magnitude = (1 / mu) * ((1 + mu)**abs(signal) - 1)
 		return tf.sign(signal) * magnitude
 
+def categorical_sample(logits, d):
+    value = tf.squeeze(tf.multinomial(logits - tf.reduce_max(logits, [1], keepdims=True), 1), [1])
+    return value
+    #return tf.one_hot(value, d)
+
+
 def _flatten(x):
 	return np.reshape(x, [-1, np.prod(list(x.shape)[1:])])
 

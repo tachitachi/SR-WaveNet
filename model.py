@@ -70,8 +70,6 @@ class WaveNet(object):
 		return sess.run(self.out, feed_dict={self.inputs: inputs})
 
 
-
-
 class WaveNetAutoEncoder(object):
 	def __init__(self, input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 		latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
@@ -88,12 +86,15 @@ class WaveNetAutoEncoder(object):
 		self.pool_stride = pool_stride
 		
 		with tf.variable_scope(name):
-			self.inputs, self.conditions, self.encoding, self.logits, self.out = self.createNetwork()
+			(self.inputs, self.conditions, self.encoding, self.logits, self.out, self.inputs_with_encoding, 
+				self.encoding_inputs, self.logits_encoding, self.out_encoding) = self.createNetwork()
 			self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
 
 		#self.targets = tf.placeholder(tf.float32, [None, self.output_size])
 
 		self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
+		self.toFloat_encoding = mu_law_decode(tf.argmax(self.out_encoding, axis=2), self.output_size)
+		#self.toFloat_encoding = mu_law_decode(tf.expand_dims(categorical_sample(self.out_encoding[0], self.output_size), 0), self.output_size)
 
 		self.targets = tf.one_hot(mu_law_encode(self.inputs, self.output_size), self.output_size)
 
@@ -175,15 +176,21 @@ class WaveNetAutoEncoder(object):
 		inputs = tf.placeholder(tf.float32, [None, None])
 		conditions = tf.placeholder(tf.float32, [None, self.condition_size])
 
+
+		inputs_isolated = tf.placeholder(tf.float32, [None, None])
+		encoding_isolated = tf.placeholder(tf.float32, [None, None, self.latent_channels])
+
 		h = tf.expand_dims(inputs, 2)
+		h2 = tf.expand_dims(inputs_isolated, 2)
 
 		encoding = self.createEncoder(h)
 
 		logits, out = self.createDecoder(h, encoding, conditions)
+		logits_from_encoding, out_from_encoding = self.createDecoder(h2, encoding_isolated, conditions, reuse=True)
 
 
 		
-		return inputs, conditions, encoding, logits, out
+		return inputs, conditions, encoding, logits, out, inputs_isolated, encoding_isolated, logits_from_encoding, out_from_encoding
 
 
 	def train(self, inputs, conditions):
@@ -199,6 +206,16 @@ class WaveNetAutoEncoder(object):
 		sess = tf.get_default_session()
 		return sess.run(self.toFloat, feed_dict={self.inputs: inputs, self.conditions: conditions})
 
+	def reconstruct_with_encoding(self, inputs, conditions, encoding):
+		sess = tf.get_default_session()
+		return sess.run(self.toFloat_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
+			self.encoding_inputs: encoding})
+
 	def mu_law(self, inputs, conditions):
 		sess = tf.get_default_session()
 		return sess.run(self.targets, feed_dict={self.inputs: inputs, self.conditions: conditions})
+
+	def get_logits(self, inputs, conditions, encoding):
+		sess = tf.get_default_session()
+		return sess.run(self.out_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
+			self.encoding_inputs: encoding})

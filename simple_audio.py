@@ -21,7 +21,8 @@ def generate_random_wave(length, combos=False):
 
 	for choice in choices:
 
-		frequency = np.random.randint(20) + 2
+		#frequency = np.random.randint(20) + 2
+		frequency = 20
 		if wave is None:
 			wave = funcs[choice](frequency=frequency, duration=1, sample_rate=length)
 		else:
@@ -31,12 +32,41 @@ def generate_random_wave(length, combos=False):
 	# Add in a small amount of gaussian noise
 	wave += np.random.normal(0, 0.1, wave.shape)
 
-	wave = Normalize(wave)
+	wave = Normalize(wave, min_val=-1, max_val=1)
+
+	return wave, labels
+
+
+def generate_random_wave_f(length, combos=False):
+	funcs = [Sine, Square, Sawtooth, Triangle]
+
+	#frequency = 20
+
+	frequency = np.random.randint(18) + 2
+	labels = np.zeros(10)
+	labels[int(frequency / 2 - 1)] = 1
+
+	if combos:
+		num_waves = np.random.randint(1, 5)
+	else:
+		num_waves = 1
+
+	# Choose which functions to compose together
+	choice = np.random.choice(np.arange(len(funcs)))
+
+	#frequency = 20
+
+	wave = funcs[choice](frequency=frequency, duration=1, sample_rate=length)
+
+	# Add in a small amount of gaussian noise
+	wave += np.random.normal(0, 0.1, wave.shape)
+
+	wave = Normalize(wave, min_val=-1, max_val=1)
 
 	return wave, labels
 
 def generate_wave_batch(batch_size, length, combos=False):
-	x, y = zip(*[generate_random_wave(length, combos) for i in range(batch_size)])
+	x, y = zip(*[generate_random_wave_f(length, combos) for i in range(batch_size)])
 	x = np.array(x)
 	y = np.array(y)
 	return x, y
