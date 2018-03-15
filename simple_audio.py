@@ -42,9 +42,9 @@ def generate_random_wave_f(length, combos=False):
 
 	#frequency = 20
 
-	frequency = np.random.randint(18) + 2
+	frequency = np.random.randint(18) + 22
 	labels = np.zeros(10)
-	labels[int(frequency / 2 - 1)] = 1
+	labels[int(frequency / 2 - 1) - 10] = 1
 
 	if combos:
 		num_waves = np.random.randint(1, 5)
@@ -143,7 +143,7 @@ def Normalize(t, min_val=0, max_val=1):
 def Noise():
 	pass
 
-# TODO: “lowpass”, “highpass”, “bandpass”, “lowshelf”, “highshelf”, “notch”, “allpass”, or “peaking”
+# TODO: "lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "notch", "allpass", or "peaking"
 def Filter():
 	pass
 

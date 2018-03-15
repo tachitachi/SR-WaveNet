@@ -219,3 +219,113 @@ class WaveNetAutoEncoder(object):
 		sess = tf.get_default_session()
 		return sess.run(self.out_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
 			self.encoding_inputs: encoding})
+
+
+
+
+class ParallelWaveNet(object):
+	def __init__(self, input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
+		latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001):
+
+		self.input_size = input_size
+		self.condition_size = condition_size
+		self.output_size = output_size
+		self.dilations = dilations
+		self.teacher = teacher
+		self.num_flows = num_flows
+		self.filter_width = filter_width
+		self.dilation_channels = dilation_channels
+		self.skip_channels = skip_channels
+		self.latent_channels = latent_channels
+		self.pool_stride = pool_stride
+
+		with tf.variable_scope(name):
+			self.inputs, self.conditions, self.encoding, self.logits, self.out = self.createNetwork()
+			self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
+
+		self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
+
+
+	def createPartialFlow(self, inputs, encoding, output_channels, scope):
+		with tf.variable_scope(scope):
+
+			# concatenate the condition to the encoding
+
+			skip_layers = []
+
+
+			h = RightShift(inputs)
+			h = DilatedCausalConv1d(h, self.filter_width, channels=self.dilation_channels, dilation_rate=1, name='causal_conv')
+
+			for i in range(len(self.dilations)):
+				dilation = self.dilations[i]
+				name = 'dilated_conv_{}'.format(i)
+
+
+				condition_bias = tf.layers.conv1d(encoding, filters=self.dilation_channels, kernel_size=1, strides=1, padding='SAME')
+				upsampled = ResizeEmbeddingNearestNeighbor(condition_bias, self.pool_stride * tf.shape(condition_bias)[1])
+
+				h = h + upsampled
+
+				h, skip = ResidualDilationLayer(h, kernel_size=self.filter_width, dilation_channels=self.dilation_channels, 
+					skip_channels=self.skip_channels, dilation_rate=dilation, name=name)
+				skip_layers.append(skip)
+
+
+			total = tf.reduce_sum(skip_layers, axis=0)
+			total = tf.nn.relu(total)
+
+			total = tf.layers.conv1d(total, filters=self.skip_channels, kernel_size=1, strides=1, padding='SAME')
+			total = tf.nn.relu(total)
+
+			logits = tf.layers.conv1d(total, filters=output_channels, kernel_size=1, strides=1, padding='SAME')
+
+			return logits
+
+
+	def createFlow(self, inputs, encoding, output_channels, scope):
+		pass
+
+		# take in the current input (1 channel noise)
+		# feed through causal dilation layers
+		# output 256-way transformation 
+
+		# inputs -> s(z)
+		# inputs -> mu(z)
+
+		# output = z * s(z) + mu(z)
+
+		with tf.variable_scope(scope):
+
+			logits_s = self.createPartialFlow(inputs, encoding, output_channels, scope + '_s')
+			logits_mu = self.createPartialFlow(inputs, encoding, output_channels, scope + '_mu')
+
+			return inputs * logits_s + logits_mu
+
+
+	def createNetwork(self):
+		inputs = tf.placeholder(tf.float32, [None, None])
+		conditions = tf.placeholder(tf.float32, [None, self.condition_size])
+		encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
+
+
+		c = tf.expand_dims(conditions, 1)
+		c = tf.tile(c, [tf.shape(encoding)[0], tf.shape(encoding)[1], 1])
+		encoding_w_condition = tf.concat([encoding, c], axis=2)
+
+		h = tf.expand_dims(inputs, 2)
+
+		for i in range(self.num_flows):
+			output_size = self.output_size if i == self.num_flows - 1 else 1
+			h = self.createFlow(h, encoding_w_condition, output_size, 'Flow{}'.format(i))
+
+		logits = h
+		out = tf.nn.softmax(logits)
+
+		return inputs, conditions, encoding, logits, out
+
+
+	def generate(self, inputs, conditions, encoding):
+		sess = tf.get_default_session()
+		return sess.run(self.toFloat, feed_dict={self.inputs: inputs, self.conditions: conditions,
+			self.encoding: encoding})
