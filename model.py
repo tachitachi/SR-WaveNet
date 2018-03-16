@@ -73,12 +73,12 @@ class WaveNet(object):
 
 
 class WaveNetAutoEncoder(object):
-	def __init__(self, input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
+	def __init__(self, input_size, condition_size, num_mixtures, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 		latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
 
 		self.input_size = input_size
 		self.condition_size = condition_size
-		self.output_size = output_size
+		self.num_mixtures = num_mixtures
 		self.dilations = dilations
 		self.filter_width = filter_width
 		self.encoder_channels = encoder_channels
@@ -94,18 +94,20 @@ class WaveNetAutoEncoder(object):
 
 		#self.targets = tf.placeholder(tf.float32, [None, self.output_size])
 
-		self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
-		self.toFloat_encoding = mu_law_decode(tf.argmax(self.out_encoding, axis=2), self.output_size)
+		#self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
+		#self.toFloat_encoding = mu_law_decode(tf.argmax(self.out_encoding, axis=2), self.output_size)
 		#self.toFloat_encoding = mu_law_decode(tf.expand_dims(categorical_sample(self.out_encoding[0], self.output_size), 0), self.output_size)
 
-		self.targets = tf.one_hot(mu_law_encode(self.inputs, self.output_size), self.output_size)
+		#self.targets = tf.one_hot(mu_law_encode(self.inputs, self.output_size), self.output_size)
 
 		#self.loss = tf.reduce_mean((self.targets - self.out) ** 2)
 
-		#labels = tf.expand_dims(self.targets, 1)
+		labels = tf.expand_dims(self.inputs, 2)
 
 
-		self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.targets))
+		#self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.targets))
+
+		self.loss = discretized_mix_logistic_loss(labels, self.logits)
 
 		self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
@@ -169,11 +171,9 @@ class WaveNetAutoEncoder(object):
 			total = tf.layers.conv1d(total, filters=self.skip_channels, kernel_size=1, strides=1, padding='SAME')
 			total = tf.nn.relu(total)
 
-			logits = tf.layers.conv1d(total, filters=self.output_size, kernel_size=1, strides=1, padding='SAME')
+			logits = tf.layers.conv1d(total, filters=self.num_mixtures * 4, kernel_size=1, strides=1, padding='SAME')
 
-			#logits = tf.nn.pool(total, window_shape=(self.input_size,), strides=(1,), pooling_type='AVG', padding='VALID')
-
-			out = tf.nn.softmax(logits)
+			out = sample_from_discretized_mix_logistic(logits, self.num_mixtures)
 
 			return logits, out
 
@@ -233,11 +233,11 @@ class WaveNetAutoEncoder(object):
 
 	def reconstruct(self, inputs, conditions):
 		sess = tf.get_default_session()
-		return sess.run(self.toFloat, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		return sess.run(self.out, feed_dict={self.inputs: inputs, self.conditions: conditions})
 
 	def reconstruct_with_encoding(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
-		return sess.run(self.toFloat_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
+		return sess.run(self.out_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
 			self.encoding_inputs: encoding})
 
 	def mu_law(self, inputs, conditions):
@@ -246,7 +246,7 @@ class WaveNetAutoEncoder(object):
 
 	def get_logits(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
-		return sess.run(self.out_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
+		return sess.run(self.logits_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
 			self.encoding_inputs: encoding})
 
 
