@@ -46,11 +46,6 @@ def generate_random_wave_f(length, combos=False):
 	labels = np.zeros(10)
 	labels[int(frequency / 2 - 1) - 10] = 1
 
-	if combos:
-		num_waves = np.random.randint(1, 5)
-	else:
-		num_waves = 1
-
 	# Choose which functions to compose together
 	choice = np.random.choice(np.arange(len(funcs)))
 

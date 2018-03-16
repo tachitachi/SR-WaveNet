@@ -13,10 +13,17 @@ from simple_audio import generate_wave_batch
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--logdir', type=str, default='events/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
-	parser.add_argument('--test', action='store_true', help='Test mode')
-	parser.add_argument('--gen', action='store_true', help='Generate mode')
-	parser.add_argument('--parallel', action='store_true', help='parallel generation mode')
+	parser.add_argument('--teacher', type=str, default='teachers/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
+	parser.add_argument('--student', type=str, default='students/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
+
+
+	parser.add_argument('--train-teacher', action='store_true', help='Train teacher')
+	parser.add_argument('--train-student', action='store_true', help='Train student')
+
+	parser.add_argument('--test-teacher-fast', action='store_true', help='Test teacher (fast generation)')
+	parser.add_argument('--test-teacher-slow', action='store_true', help='Test teacher (slow generation)')
+	parser.add_argument('--test-student', action='store_true', help='Test student')
+
 	args = parser.parse_args()
 
 	batch_size = 1
@@ -42,165 +49,114 @@ if __name__ == '__main__':
 
     # input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 	# output_channels=256, latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
-	network = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, output_size=quantization_channels, dilations=dilations, pool_stride=512)
+	teacher = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, output_size=quantization_channels, dilations=dilations, pool_stride=512)
 
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
 	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes, output_size=quantization_channels, 
-		dilations=dilations, teacher=network, num_flows=4, pool_stride=512)
+		dilations=dilations, teacher=teacher, num_flows=4, pool_stride=512, learning_rate=1e-5)
 
-	saver = tf.train.Saver(network.network_params)
 
 	with tf.Session() as sess:
 		sess.run(tf.global_variables_initializer())
 
+		teacher.load(args.teacher)
+		student.load(args.student)
 
-		if args.logdir is not None and os.path.exists(args.logdir):
-			checkpoint_state = tf.train.get_checkpoint_state(args.logdir)
-			if checkpoint_state is not None:
-				try:
-					saver.restore(sess, checkpoint_state.model_checkpoint_path)
-					print('Restoring previous session')
-				except (tf.errors.NotFoundError):
-					print('Could not find checkpoint at %s', checkpoint_state.model_checkpoint_path)
-
-		if not args.test:
-
+		if args.train_teacher:
 			for global_step in range(num_steps):
 				#x, y = audio_data.TrainBatch(batch_size)
 
-				x, y = generate_wave_batch(batch_size, num_samples, combos=True)
-
-				loss = network.train(x, y)
-
+				x, y = generate_wave_batch(batch_size, num_samples)
+				loss = teacher.train(x, y)
 
 				if global_step % print_steps == 0:
 					print(global_step, loss)
-
-#					regen = network.reconstruct(x, y)
-#
-#					plt.figure(1)
-#					plt.subplot(211)
-#
-#					plt.plot(np.arange(num_samples), x[0])
-#
-#					plt.subplot(212)
-#					plt.plot(np.arange(num_samples), regen[0])
-#
-#					plt.show()
-
 				# Checkpoint once per minute
-				if time.time() - last_checkpoint_time > 60:
-					if not os.path.isdir(args.logdir):
-						os.makedirs(args.logdir)
-					saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
-					last_checkpoint_time = time.time()
+				teacher.save(args.teacher, global_step, force=False)
 
-			saver.save(sess, os.path.join(args.logdir, 'model.ckpt'), global_step)
+			teacher.save(args.teacher, global_step, force=True)
 
-		else:
+		if args.train_student:
+			for global_step in range(num_steps):
+				x, y = generate_wave_batch(batch_size, num_samples)
 
+				encoding = teacher.encode(x, y) 
 
-			if args.parallel:
+				noise = np.random.random(x.shape) * 2 - 1
 
-				for i in range(10):
-					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+				loss = student.train(noise, y, encoding)
 
-					encoding = network.encode(x, y) 
-
-					regen = network.reconstruct_with_encoding(x, y, encoding)
+				if True or global_step % print_steps == 0:
+					entropy = student.getEntropy(noise, y, encoding)
+					print(global_step, loss, entropy)
 
 
-
-					noise1 = np.random.random(x.shape)
-					noise2 = np.random.random(x.shape)
-					parallel_gen1 = student.generate(noise1, y, encoding)
-					parallel_gen2 = student.generate(noise2, y, encoding)
+				student.save(args.student, global_step, force=False)
+			student.save(args.student, global_step, force=True)
 
 
-					plt.figure(1)
-					plt.subplot(221)
+		if args.test_teacher_fast:
+			for global_step in range(10):
+				#x, y = audio_data.TrainBatch(batch_size)
 
-					plt.plot(np.arange(num_samples), x[0])
+				x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+				x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
 
-					plt.subplot(222)
-					plt.plot(np.arange(num_samples), regen[0])
+				regen = teacher.reconstruct(x, y)
+				encoding = teacher.encode(x2, y2) 
 
+				regen2 = teacher.reconstruct_with_encoding(x2, y2, encoding)
 
-					plt.subplot(223)
-					plt.plot(np.arange(num_samples), parallel_gen1[0])
+				plt.figure(1)
+				plt.subplot(221)
 
-					plt.subplot(224)
-					plt.plot(np.arange(num_samples), parallel_gen2[0])
+				plt.plot(np.arange(num_samples), x[0])
 
-					plt.show()
+				plt.subplot(222)
+				plt.plot(np.arange(num_samples), x2[0])
 
+				plt.subplot(223)
+				plt.plot(np.arange(num_samples), regen[0])
 
-			elif args.gen:
+				plt.subplot(224)
+				plt.plot(np.arange(num_samples), regen2[0])
 
+				plt.show()
 
-				for count in range(10):
+		if args.test_teacher_slow:
+			for count in range(10):
 
-					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
-					#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
+				x, y = generate_wave_batch(batch_size, num_samples, combos=True)
+				#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
 
-					encoding = network.encode(x, y)
+				encoding = teacher.encode(x, y)
 
-					x_so_far = np.zeros((1, num_samples))
-
-
-
-					x_so_far = network.reconstruct_with_encoding(x_so_far, y, encoding)
-
-					print(x_so_far, x_so_far.shape)
-
-					for i in range(700):
-						x_so_far[:,i:] = 0
-						#print(x_so_far[:,:100])
-						#print(network.get_logits(x_so_far, y, encoding))
-						x_so_far[:, i] = network.reconstruct_with_encoding(x_so_far, y, encoding)[:, i]
+				x_so_far = np.zeros((1, num_samples))
 
 
+
+				x_so_far = teacher.reconstruct_with_encoding(x_so_far, y, encoding)
+
+				print(x_so_far, x_so_far.shape)
+
+				for i in range(700):
 					x_so_far[:,i:] = 0
-					regen = x_so_far
+					#print(x_so_far[:,:100])
+					#print(teacher.get_logits(x_so_far, y, encoding))
+					x_so_far[:, i] = teacher.reconstruct_with_encoding(x_so_far, y, encoding)[:, i]
 
-					plt.figure(1)
-					plt.subplot(211)
 
-					plt.plot(np.arange(num_samples), x[0])
+				x_so_far[:,i:] = 0
+				regen = x_so_far
 
-					plt.subplot(212)
-					plt.plot(np.arange(num_samples), regen[0])
+				plt.figure(1)
+				plt.subplot(211)
 
-					plt.show()
+				plt.plot(np.arange(num_samples), x[0])
 
-					#for i in range(num_samples):
+				plt.subplot(212)
+				plt.plot(np.arange(num_samples), regen[0])
 
-			else:
+				plt.show()
 
-				for global_step in range(10):
-					#x, y = audio_data.TrainBatch(batch_size)
-
-					x, y = generate_wave_batch(batch_size, num_samples, combos=True)
-					x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
-
-					regen = network.reconstruct(x, y)
-					encoding = network.encode(x2, y2) 
-
-					regen2 = network.reconstruct_with_encoding(x2, y2, encoding)
-
-					plt.figure(1)
-					plt.subplot(221)
-
-					plt.plot(np.arange(num_samples), x[0])
-
-					plt.subplot(222)
-					plt.plot(np.arange(num_samples), x2[0])
-
-					plt.subplot(223)
-					plt.plot(np.arange(num_samples), regen[0])
-
-					plt.subplot(224)
-					plt.plot(np.arange(num_samples), regen2[0])
-
-					plt.show()

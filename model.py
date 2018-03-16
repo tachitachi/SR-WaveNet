@@ -1,5 +1,7 @@
 import tensorflow as tf
 import numpy as np
+import os
+import time
 
 from ops import *
 
@@ -107,6 +109,9 @@ class WaveNetAutoEncoder(object):
 
 		self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
+		self.saver = tf.train.Saver(self.network_params)
+		self.last_checkpoint_time = time.time()
+
 
 	def createEncoder(self, h, reuse=False):
 		with tf.variable_scope('Encoder', reuse=reuse):
@@ -192,6 +197,30 @@ class WaveNetAutoEncoder(object):
 		
 		return inputs, conditions, encoding, logits, out, inputs_isolated, encoding_isolated, logits_from_encoding, out_from_encoding
 
+	def load(self, logdir):
+		sess = tf.get_default_session()
+		if logdir is not None and os.path.exists(logdir):
+			checkpoint_state = tf.train.get_checkpoint_state(logdir)
+			if checkpoint_state is not None:
+				try:
+					self.saver.restore(sess, checkpoint_state.model_checkpoint_path)
+					print('Restoring previous session')
+					return True
+				except (tf.errors.NotFoundError):
+					print('Could not find checkpoint at %s', checkpoint_state.model_checkpoint_path)
+					return False
+
+	def save(self, logdir, global_step, force=False):
+		sess = tf.get_default_session()
+		if force or time.time() - self.last_checkpoint_time > 60:
+			if not os.path.isdir(logdir):
+				os.makedirs(logdir)
+			self.saver.save(sess, os.path.join(logdir, 'model.ckpt'), global_step)
+			self.last_checkpoint_time = time.time()
+			return True
+
+		return False
+
 
 	def train(self, inputs, conditions):
 		sess = tf.get_default_session()
@@ -245,6 +274,19 @@ class ParallelWaveNet(object):
 
 		self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
 
+		#log_prob_tf = tf.nn.log_softmax(self.logits)
+		#prob_tf = tf.nn.softmax(self.logits)
+		self.entropy = tf.reduce_sum(-tf.nn.softmax(self.logits) * tf.nn.log_softmax(self.logits), axis=2)
+
+
+		#teacher_logits = 
+
+		#self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.teacher.logits_encoding) - self.entropy) 
+		self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.teacher.logits_encoding)) 
+		self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=self.network_params)
+
+		self.saver = tf.train.Saver(self.network_params)
+		self.last_checkpoint_time = time.time()
 
 	def createPartialFlow(self, inputs, encoding, output_channels, scope):
 		with tf.variable_scope(scope):
@@ -265,6 +307,7 @@ class ParallelWaveNet(object):
 				condition_bias = tf.layers.conv1d(encoding, filters=self.dilation_channels, kernel_size=1, strides=1, padding='SAME')
 				upsampled = ResizeEmbeddingNearestNeighbor(condition_bias, self.pool_stride * tf.shape(condition_bias)[1])
 
+				# This bias should be added before filter * gate, to each filter and gate
 				h = h + upsampled
 
 				h, skip = ResidualDilationLayer(h, kernel_size=self.filter_width, dilation_channels=self.dilation_channels, 
@@ -304,9 +347,15 @@ class ParallelWaveNet(object):
 
 
 	def createNetwork(self):
-		inputs = tf.placeholder(tf.float32, [None, None])
-		conditions = tf.placeholder(tf.float32, [None, self.condition_size])
-		encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
+		#inputs = tf.placeholder(tf.float32, [None, None])
+		#conditions = tf.placeholder(tf.float32, [None, self.condition_size])
+		#encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
+
+		#self.encoding_inputs, self.logits_encoding, self.out_encoding
+
+		inputs = self.teacher.inputs_with_encoding
+		conditions = self.teacher.conditions
+		encoding = self.teacher.encoding_inputs
 
 
 		c = tf.expand_dims(conditions, 1)
@@ -324,8 +373,44 @@ class ParallelWaveNet(object):
 
 		return inputs, conditions, encoding, logits, out
 
+	def load(self, logdir):
+		sess = tf.get_default_session()
+		if logdir is not None and os.path.exists(logdir):
+			checkpoint_state = tf.train.get_checkpoint_state(logdir)
+			if checkpoint_state is not None:
+				try:
+					self.saver.restore(sess, checkpoint_state.model_checkpoint_path)
+					print('Restoring previous session')
+					return True
+				except (tf.errors.NotFoundError):
+					print('Could not find checkpoint at %s', checkpoint_state.model_checkpoint_path)
+					return False
+
+	def save(self, logdir, global_step, force=False):
+		sess = tf.get_default_session()
+		if force or time.time() - self.last_checkpoint_time > 60:
+			if not os.path.isdir(logdir):
+				os.makedirs(logdir)
+			self.saver.save(sess, os.path.join(logdir, 'model.ckpt'), global_step)
+			self.last_checkpoint_time = time.time()
+			return True
+
+		return False
+
 
 	def generate(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
 		return sess.run(self.toFloat, feed_dict={self.inputs: inputs, self.conditions: conditions,
 			self.encoding: encoding})
+
+	def getEntropy(self, inputs, conditions, encoding):
+		sess = tf.get_default_session()
+		return sess.run(self.entropy, feed_dict={self.inputs: inputs, self.conditions: conditions,
+			self.encoding: encoding})
+
+	def train(self, inputs, conditions, encoding):
+		sess = tf.get_default_session()
+		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.conditions: conditions,
+			self.encoding: encoding})
+
+		return loss

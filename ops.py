@@ -19,6 +19,7 @@ def DilatedCausalConv1d(inputs, kernel_size, channels, dilation_rate=1, name='',
 		conv = conv + bias
 	return conv
 
+# TODO: How to properly add bias from conditioning?
 def ResidualDilationLayer(inputs, kernel_size, dilation_channels, skip_channels, dilation_rate=1, name='', dtype=tf.float32, use_bias=True):
 
 	# input -> causal conv -> tanh
