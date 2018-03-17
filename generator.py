@@ -27,7 +27,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	batch_size = 1
-	num_steps = 100000
+	num_steps = 200000
 	print_steps = 100
 
 	last_checkpoint_time = time.time()
@@ -51,20 +51,25 @@ if __name__ == '__main__':
 	# output_channels=256, latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
 	teacher = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, num_mixtures=5, dilations=dilations, pool_stride=512)
 
+	#print('after teacher')
+
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
-	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes, output_size=quantization_channels, 
-		dilations=dilations, teacher=teacher, num_flows=4, pool_stride=512, learning_rate=1e-5)
+	#student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes, num_mixtures=5, 
+	#	dilations=dilations, teacher=teacher, num_flows=1, pool_stride=512, learning_rate=1e-5)
 
 
-	with tf.Session() as sess:
+	with tf.Session(graph=teacher.graph) as sess:
 		sess.run(tf.global_variables_initializer())
 
 		teacher.load(args.teacher)
-		student.load(args.student)
+		#student.load(args.student)
+
+		#print('after load')
 
 		if args.train_teacher:
 			for global_step in range(num_steps):
+				#print(global_step)
 				#x, y = audio_data.TrainBatch(batch_size)
 
 				x, y = generate_wave_batch(batch_size, num_samples)
@@ -85,11 +90,32 @@ if __name__ == '__main__':
 
 				noise = np.random.random(x.shape) * 2 - 1
 
+				#teacher_logits = teacher.
+
 				loss = student.train(noise, y, encoding)
 
-				if True or global_step % print_steps == 0:
+				if global_step % print_steps == 0:
 					entropy = student.getEntropy(noise, y, encoding)
+#					regen = teacher.reconstruct_with_encoding(x, y, encoding)
+#					output = student.generate(noise, y, encoding)
 					print(global_step, loss, entropy)
+#
+#					plt.figure(1)
+#					plt.subplot(221)
+#
+#					plt.plot(np.arange(num_samples), x[0])	
+#
+#					plt.subplot(222)
+#					plt.plot(np.arange(num_samples), regen[0])
+#
+#					
+#					plt.subplot(223)
+#					plt.plot(np.arange(num_samples), noise[0])
+#					
+#					plt.subplot(224)
+#					plt.plot(np.arange(num_samples), output[0])
+#
+#					plt.show()
 
 
 				student.save(args.student, global_step, force=False)
@@ -157,6 +183,36 @@ if __name__ == '__main__':
 
 				plt.subplot(212)
 				plt.plot(np.arange(num_samples), regen[0])
+
+				plt.show()
+
+
+
+		if args.test_student:
+			for global_step in range(10):
+				x, y = generate_wave_batch(batch_size, num_samples)
+
+				encoding = teacher.encode(x, y) 
+				regen = teacher.reconstruct(x, y)
+
+				noise = np.random.random(x.shape) * 2 - 1
+				output = student.generate(x, y, encoding)
+
+
+				plt.figure(1)
+				plt.subplot(221)
+
+				plt.plot(np.arange(num_samples), x[0])	
+
+				plt.subplot(222)
+				plt.plot(np.arange(num_samples), regen[0])
+
+				
+				plt.subplot(223)
+				plt.plot(np.arange(num_samples), noise[0])
+				
+				plt.subplot(224)
+				plt.plot(np.arange(num_samples), output[0])
 
 				plt.show()
 
