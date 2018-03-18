@@ -50,8 +50,8 @@ if __name__ == '__main__':
 
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
-	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes, num_mixtures=5, 
-		dilations=dilations, teacher=args.teacher, num_flows=1, pool_stride=512, learning_rate=1e-5)
+	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes,
+		dilations=dilations, teacher=args.teacher, num_flows=4, pool_stride=512, learning_rate=1e-5)
 
 
 	with tf.Session(graph=student.graph) as sess:
@@ -73,13 +73,17 @@ if __name__ == '__main__':
 
 				#teacher_logits = teacher.
 
-				loss = student.train(noise, y, encoding)
+				# Train multiple times on different samples
+				loss1 = student.train(noise, y, encoding)
+				loss2 = student.train(noise, y, encoding)
+				loss3 = student.train(noise, y, encoding)
+				loss4 = student.train(noise, y, encoding)
 
 				if global_step % print_steps == 0:
 					#entropy = student.getEntropy(noise, y, encoding)
 #					regen = teacher.reconstruct_with_encoding(x, y, encoding)
 #					output = student.generate(noise, y, encoding)
-					print(global_step, loss)
+					print(global_step, loss1, loss2, loss3, loss4)
 #
 #					plt.figure(1)
 #					plt.subplot(221)
@@ -110,8 +114,14 @@ if __name__ == '__main__':
 				encoding = student.encode(x, y) 
 				regen = student.reconstruct(x, y)
 
-				noise = np.random.random(x.shape) * 2 - 1
-				output = student.generate(x, y, encoding)
+				noise = np.random.logistic(0, 1, x.shape)
+				entropy = student.getEntropy(noise, y, encoding)
+				output = student.generate(noise, y, encoding)
+
+				loss = student.train(noise, y, encoding)
+
+				print('Entropy', entropy)
+				print('loss', loss)
 
 
 				plt.figure(1)

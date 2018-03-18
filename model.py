@@ -92,28 +92,27 @@ class WaveNetAutoEncoder(object):
 		with self.graph.as_default():
 			
 			with tf.variable_scope(name):
-				(self.inputs, self.conditions, self.encoding, self.logits, self.out, self.inputs_with_encoding, 
-					self.encoding_inputs, self.logits_encoding, self.out_encoding) = self.createNetwork()
+				self.createNetwork()
 				self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
 
 			#self.targets = tf.placeholder(tf.float32, [None, self.output_size])
 
 			#self.toFloat = mu_law_decode(tf.argmax(self.out, axis=2), self.output_size)
-			#self.toFloat_encoding = mu_law_decode(tf.argmax(self.out_encoding, axis=2), self.output_size)
-			#self.toFloat_encoding = mu_law_decode(tf.expand_dims(categorical_sample(self.out_encoding[0], self.output_size), 0), self.output_size)
+			#self.toFloat_encoding = mu_law_decode(tf.argmax(self.out_from_encoding, axis=2), self.output_size)
+			#self.toFloat_encoding = mu_law_decode(tf.expand_dims(categorical_sample(self.out_from_encoding[0], self.output_size), 0), self.output_size)
 
 			#self.targets = tf.one_hot(mu_law_encode(self.inputs, self.output_size), self.output_size)
 
 			#self.loss = tf.reduce_mean((self.targets - self.out) ** 2)
 
 			labels = tf.expand_dims(self.inputs, 2)
-			labels_encoding = tf.expand_dims(self.inputs_with_encoding, 2)
+			labels_truth = tf.expand_dims(self.inputs_truth, 2)
 
 
 			#self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=self.logits, labels=self.targets))
 
 			self.loss = discretized_mix_logistic_loss(labels, self.logits)
-			self.loss_encoding = discretized_mix_logistic_loss(labels_encoding, self.logits)
+			self.loss_encoding = discretized_mix_logistic_loss(labels_truth, self.logits_from_encoding)
 
 			self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
 
@@ -127,11 +126,12 @@ class WaveNetAutoEncoder(object):
 			tf.add_to_collection('Out_e', self.out)
 			tf.add_to_collection('Loss_e', self.loss)
 
-			tf.add_to_collection('Inputs_d', self.inputs_with_encoding)
-			tf.add_to_collection('Encoding_input', self.encoding_inputs)
-			tf.add_to_collection('Logits_d', self.logits_encoding)
-			tf.add_to_collection('Out_d', self.out_encoding)
-			tf.add_to_collection('Loss_d', self.loss_encoding)
+			tf.add_to_collection('Encoding_input', self.encoding_isolated)
+			tf.add_to_collection('Logits_d', self.logits_from_encoding)
+			tf.add_to_collection('Out_d', self.out_from_encoding)
+			#tf.add_to_collection('Loss_d', self.loss_encoding)
+
+			tf.add_to_collection('Inputs_truth', self.inputs_truth)
 
 
 	def createEncoder(self, h, reuse=False):
@@ -155,7 +155,7 @@ class WaveNetAutoEncoder(object):
 			return encoding
 
 
-	def createDecoder(self, h, encoding, conditions, reuse=False):
+	def createDecoder(self, truth, encoding, conditions, reuse=False):
 		with tf.variable_scope('Decoder', reuse=reuse):
 
 			# concatenate the condition to the encoding
@@ -166,7 +166,7 @@ class WaveNetAutoEncoder(object):
 			skip_layers_decoder = []
 
 
-			h = RightShift(h)
+			h = RightShift(truth)
 			h = DilatedCausalConv1d(h, self.filter_width, channels=self.dilation_channels, dilation_rate=1, name='causal_conv')
 
 			for i in range(len(self.dilations)):
@@ -197,24 +197,19 @@ class WaveNetAutoEncoder(object):
 			return logits, out
 
 	def createNetwork(self):
-		inputs = tf.placeholder(tf.float32, [None, None], 'inputs_placeholder')
-		conditions = tf.placeholder(tf.float32, [None, self.condition_size], 'conditions_placeholder')
+		self.inputs = tf.placeholder(tf.float32, [None, None], 'inputs_placeholder')
+		self.inputs_truth = tf.placeholder(tf.float32, [None, None], 'inputs_truth_placeholder')
+		self.conditions = tf.placeholder(tf.float32, [None, self.condition_size], 'conditions_placeholder')
 
+		self.encoding_isolated = tf.placeholder(tf.float32, [None, None, self.latent_channels], 'encoding_nodecoder_placeholder')
 
-		inputs_isolated = tf.placeholder(tf.float32, [None, None], 'inputs_nodecoder_placeholder')
-		encoding_isolated = tf.placeholder(tf.float32, [None, None, self.latent_channels], 'encoding_nodecoder_placeholder')
+		h = tf.expand_dims(self.inputs, 2)
+		h_truth = tf.expand_dims(self.inputs_truth, 2)
 
-		h = tf.expand_dims(inputs, 2)
-		h2 = tf.expand_dims(inputs_isolated, 2)
+		self.encoding = self.createEncoder(h)
 
-		encoding = self.createEncoder(h)
-
-		logits, out = self.createDecoder(h, encoding, conditions)
-		logits_from_encoding, out_from_encoding = self.createDecoder(h2, encoding_isolated, conditions, reuse=True)
-
-
-		
-		return inputs, conditions, encoding, logits, out, inputs_isolated, encoding_isolated, logits_from_encoding, out_from_encoding
+		self.logits, self.out = self.createDecoder(h_truth, self.encoding, self.conditions)
+		self.logits_from_encoding, self.out_from_encoding = self.createDecoder(h_truth, self.encoding_isolated, self.conditions, reuse=True)
 
 	def load(self, logdir):
 		sess = tf.get_default_session()
@@ -243,7 +238,7 @@ class WaveNetAutoEncoder(object):
 
 	def train(self, inputs, conditions):
 		sess = tf.get_default_session()
-		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.conditions: conditions})
+		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.inputs_truth: inputs, self.conditions: conditions})
 		return loss
 
 	def encode(self, inputs, conditions):
@@ -252,12 +247,12 @@ class WaveNetAutoEncoder(object):
 
 	def reconstruct(self, inputs, conditions):
 		sess = tf.get_default_session()
-		return sess.run(self.out, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		return sess.run(self.out, feed_dict={self.inputs: inputs, self.c: inputs, self.conditions: conditions})
 
 	def reconstruct_with_encoding(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
-		return sess.run(self.out_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
-			self.encoding_inputs: encoding})
+		return sess.run(self.out_from_encoding, feed_dict={self.inputs_truth: inputs, self.conditions: conditions,
+			self.encoding_isolated: encoding})
 
 	def mu_law(self, inputs, conditions):
 		sess = tf.get_default_session()
@@ -265,19 +260,19 @@ class WaveNetAutoEncoder(object):
 
 	def get_logits(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
-		return sess.run(self.logits_encoding, feed_dict={self.inputs_with_encoding: inputs, self.conditions: conditions,
-			self.encoding_inputs: encoding})
+		return sess.run(self.logits_from_encoding, feed_dict={self.inputs_truth: inputs, self.conditions: conditions,
+			self.encoding_isolated: encoding})
 
 
 
 
 class ParallelWaveNet(object):
-	def __init__(self, input_size, condition_size, dilations, teacher, num_mixtures=5,  num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
+	def __init__(self, input_size, condition_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 		latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001):
 
 		self.input_size = input_size
 		self.condition_size = condition_size
-		self.num_mixtures = num_mixtures
+		#self.num_mixtures = num_mixtures
 		self.dilations = dilations
 		
 		self.teacher = teacher # directory for a teacher to load
@@ -293,7 +288,7 @@ class ParallelWaveNet(object):
 		with self.graph.as_default():
 
 			with tf.variable_scope(name):
-				self.inputs, self.conditions, self.encoding, self.logits, self.out = self.createNetwork()
+				self.createNetwork()
 				self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
 
 
@@ -306,7 +301,7 @@ class ParallelWaveNet(object):
 			# replace the front of the teacher network, to connect the end of the student network
 			self.teacher_meta = tf.train.import_meta_graph(checkpoint_state.model_checkpoint_path + '.meta', 
 				input_map={
-					'WaveNetAutoEncoder/inputs_nodecoder_placeholder:0': self.inputs,
+					'WaveNetAutoEncoder/inputs_nodecoder_placeholder:0': self.inputs_teacher,
 					'WaveNetAutoEncoder/conditions_placeholder:0': self.conditions,
 					'WaveNetAutoEncoder/encoding_nodecoder_placeholder:0': self.encoding
 					})
@@ -325,15 +320,26 @@ class ParallelWaveNet(object):
 
 			#self.entropy = tf.reduce_sum(-tf.nn.softmax(self.logits) * tf.nn.log_softmax(self.logits), axis=2)
 
+			# entropy
+			# E ( sum ln s(z, theta) ) + 2T
+
+			# Teacher uses a mixture of logistics, but student only has one logistic
+
+			# mixture params: [B, param (2), mixture_num]  param: [scale, mean]
+
+			self.entropy = tf.reduce_sum(tf.log(self.s_tot)) + tf.cast(2 * tf.shape(self.inputs)[0], tf.float32)
+
+			#print(self.out)
+
 			# the output of the student network should flow through the teacher network
-			self.loss = discretized_mix_logistic_loss(teacher_logits, self.logits)
+			self.loss = discretized_mix_logistic_loss(teacher_logits, self.out)
 
 			self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=self.network_params)
 
 			self.saver = tf.train.Saver(self.network_params)
 			self.last_checkpoint_time = time.time()
 
-	def createPartialFlow(self, inputs, encoding, output_channels, scope):
+	def createPartialFlow(self, inputs, encoding, scope):
 		with tf.variable_scope(scope):
 
 			# concatenate the condition to the encoding
@@ -360,18 +366,21 @@ class ParallelWaveNet(object):
 				skip_layers.append(skip)
 
 
-			total = tf.reduce_sum(skip_layers, axis=0)
-			total = tf.nn.relu(total)
+#			total = tf.reduce_sum(skip_layers, axis=0)
+#			total = tf.nn.relu(total)
+#
+#			total = tf.layers.conv1d(total, filters=self.skip_channels, kernel_size=1, strides=1, padding='SAME')
+#			total = tf.nn.relu(total)
+#
+#			logits = tf.layers.conv1d(total, filters=2, kernel_size=1, strides=1, padding='SAME')
 
-			total = tf.layers.conv1d(total, filters=self.skip_channels, kernel_size=1, strides=1, padding='SAME')
-			total = tf.nn.relu(total)
+			h = tf.nn.relu(h)
+			h = tf.layers.conv1d(h, filters=2, kernel_size=1, strides=1, padding='SAME')
 
-			logits = tf.layers.conv1d(total, filters=output_channels, kernel_size=1, strides=1, padding='SAME')
-
-			return logits
+			return h
 
 
-	def createFlow(self, inputs, encoding, output_channels, scope):
+	def createFlow(self, inputs, encoding, scope):
 		pass
 
 		# take in the current input (1 channel noise)
@@ -390,39 +399,67 @@ class ParallelWaveNet(object):
 
 			#return inputs * logits_s + logits_mu
 
-			logits = self.createPartialFlow(inputs, encoding, output_channels, scope)
-			out = sample_from_discretized_mix_logistic(logits, self.num_mixtures)
+			params = self.createPartialFlow(inputs, encoding, scope)
+			#out = sample_from_discretized_mix_logistic(logits, self.num_mixtures)
 
-			return logits, out
+			scale = tf.exp(tf.slice(params, [0, 0, 0], [-1, -1, 1]))
+			mean = tf.slice(params, [0, 0, 1], [-1, -1, 1])
+
+			#out = inputs * scale + mean
+
+			#return params#, out
+
+			return scale, mean
 
 
 	def createNetwork(self):
-		inputs = tf.placeholder(tf.float32, [None, None])
-		conditions = tf.placeholder(tf.float32, [None, self.condition_size])
-		encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
+		# input logistic noise
+		self.inputs = tf.placeholder(tf.float32, [None, None])
+		self.conditions = tf.placeholder(tf.float32, [None, self.condition_size])
+		self.encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
 
-		#self.encoding_inputs, self.logits_encoding, self.out_encoding
+		c = tf.expand_dims(self.conditions, 1)
+		c = tf.tile(c, [tf.shape(self.encoding)[0], tf.shape(self.encoding)[1], 1])
+		encoding_w_condition = tf.concat([self.encoding, c], axis=2)
 
-		#inputs = self.teacher.inputs_with_encoding
-		#conditions = self.teacher.conditions
-		#encoding = self.teacher.encoding_inputs
+		x = tf.expand_dims(self.inputs, 2)
 
+		#self.param_list = []
 
-		c = tf.expand_dims(conditions, 1)
-		c = tf.tile(c, [tf.shape(encoding)[0], tf.shape(encoding)[1], 1])
-		encoding_w_condition = tf.concat([encoding, c], axis=2)
-
-		h = tf.expand_dims(inputs, 2)
+		scales = []
+		means = []
 
 		for i in range(self.num_flows):
-			output_size = self.num_mixtures * 4
-			logits, h = self.createFlow(h, encoding_w_condition, output_size, 'Flow{}'.format(i))
+			scale, mean = self.createFlow(x, encoding_w_condition, 'Flow{}'.format(i))
+			#self.param_list.append(params)
+			scales.append(scale)
+			means.append(mean)
 
-		#logits = h
-		#out = tf.nn.softmax(logits)
-		out = tf.squeeze(sample_from_discretized_mix_logistic(logits, self.num_mixtures), axis=2)
+		#self.s_tot = self.param_list[0][:,:,0]
 
-		return inputs, conditions, encoding, logits, out
+		self.s_tot = tf.ones([tf.shape(self.inputs)[0], tf.shape(self.inputs)[0], 1])
+		self.mu_tot = tf.zeros([tf.shape(self.inputs)[0], tf.shape(self.inputs)[0], 1])
+
+		for i in range(len(scales)):
+			self.s_tot *= scales[i]
+
+			print('multiplying s_{}'.format(i), scales[i])
+
+			mu = means[i]
+
+			for j in range(i + 1, len(scales)):
+				print('multiplying mu_{} * s_{}'.format(i, j))
+				mu *= scales[j]
+
+			print('adding mu_{}'.format(i), means[i])
+
+			self.mu_tot += mu
+
+		#self.out = probs_logistic(self.s_tot, self.mu_tot, x)
+		self.out = x * self.s_tot + self.mu_tot
+
+		print('@@@@ OUT', self.s_tot, self.mu_tot, x, self.out)
+
 
 	def load(self, logdir):
 		sess = tf.get_default_session()
@@ -461,7 +498,7 @@ class ParallelWaveNet(object):
 
 	def getEntropy(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
-		return sess.run(self.entropy, feed_dict={self.inputs: inputs, self.conditions: conditions,
+		return sess.run([self.entropy], feed_dict={self.inputs: inputs, self.conditions: conditions,
 			self.encoding: encoding})
 
 	def train(self, inputs, conditions, encoding):

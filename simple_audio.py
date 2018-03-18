@@ -54,7 +54,7 @@ def generate_random_wave_f(length, combos=False):
 	wave = funcs[choice](frequency=frequency, duration=1, sample_rate=length)
 
 	# Add in a small amount of gaussian noise
-	wave += np.random.normal(0, 0.1, wave.shape)
+	wave += np.random.normal(0, 0.05, wave.shape)
 
 	wave = Normalize(wave, min_val=-1, max_val=1)
 

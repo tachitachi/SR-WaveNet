@@ -198,7 +198,17 @@ def sample_from_discretized_mix_logistic(l,nr_mix):
     #return x0
     return x
 
-
+def probs_logistic(scale, mu, y, num_classes=256, log_scale_min=-14):
+    means = mu
+    scale = tf.clip_by_value(scale,np.exp(log_scale_min),np.inf)
+    centered_y = y - means
+    inv_stdv = 1/scale
+    plus_in = inv_stdv * (centered_y + 1. / (num_classes - 1))
+    cdf_plus = tf.nn.sigmoid(plus_in)
+    min_in = inv_stdv * (centered_y - 1. / (num_classes - 1))
+    cdf_min = tf.nn.sigmoid(min_in)
+    cdf_delta = cdf_plus - cdf_min
+    return cdf_delta
 
 
 def _flatten(x):
