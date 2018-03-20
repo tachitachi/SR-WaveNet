@@ -160,7 +160,7 @@ class WaveNetAutoEncoder(object):
 
 			# concatenate the condition to the encoding
 			c = tf.expand_dims(conditions, 1)
-			c = tf.tile(c, [tf.shape(encoding)[0], tf.shape(encoding)[1], 1])
+			c = tf.tile(c, [1, tf.shape(encoding)[1], 1])
 			encoding_w_condition = tf.concat([encoding, c], axis=2)
 
 			skip_layers_decoder = []
@@ -247,7 +247,7 @@ class WaveNetAutoEncoder(object):
 
 	def reconstruct(self, inputs, conditions):
 		sess = tf.get_default_session()
-		return sess.run(self.out, feed_dict={self.inputs: inputs, self.c: inputs, self.conditions: conditions})
+		return sess.run(self.out, feed_dict={self.inputs: inputs, self.inputs_truth: inputs, self.conditions: conditions})
 
 	def reconstruct_with_encoding(self, inputs, conditions, encoding):
 		sess = tf.get_default_session()
@@ -298,16 +298,20 @@ class ParallelWaveNet(object):
 			checkpoint_state = tf.train.get_checkpoint_state(self.teacher)
 			#teacher_meta = tf.train.import_meta_graph(checkpoint_state.model_checkpoint_path + '.meta')
 
+
+			self.inputs_truth = tf.placeholder(tf.float32, [None, None])
+
 			# replace the front of the teacher network, to connect the end of the student network
 			self.teacher_meta = tf.train.import_meta_graph(checkpoint_state.model_checkpoint_path + '.meta', 
 				input_map={
-					'WaveNetAutoEncoder/inputs_nodecoder_placeholder:0': self.inputs_teacher,
+					'WaveNetAutoEncoder/inputs_truth_placeholder:0': self.inputs_truth,
 					'WaveNetAutoEncoder/conditions_placeholder:0': self.conditions,
 					'WaveNetAutoEncoder/encoding_nodecoder_placeholder:0': self.encoding
 					})
 
 			# Prevent gradients from flowing through teacher network?
-			teacher_logits =  tf.stop_gradient(self.graph.get_collection('Logits_d')[0])
+			self.teacher_logits =  tf.stop_gradient(self.graph.get_collection('Logits_d')[0])
+			#self.teacher_logits =  self.graph.get_collection('Logits_d')[0]
 			self.teacher_encoding = self.graph.get_collection('Encoding_output')[0]
 
 			self.teacher_inputs = self.graph.get_collection('Inputs_e')[0]
@@ -325,14 +329,19 @@ class ParallelWaveNet(object):
 
 			# Teacher uses a mixture of logistics, but student only has one logistic
 
-			# mixture params: [B, param (2), mixture_num]  param: [scale, mean]
+			# Should the +2 be on the outside? Or should it be +2T on the outside?
+			# Should it be mean(sum(ln(s))) ?
+			self.entropy = tf.reduce_mean(tf.log(self.s_tot) + 2.)
 
-			self.entropy = tf.reduce_sum(tf.log(self.s_tot)) + tf.cast(2 * tf.shape(self.inputs)[0], tf.float32)
-
-			#print(self.out)
+			self.probs_logistic = probs_logistic(self.s_tot, self.mu_tot, self.out)
 
 			# the output of the student network should flow through the teacher network
-			self.loss = discretized_mix_logistic_loss(teacher_logits, self.out)
+			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=False)
+			h_pt_ps = tf.reduce_sum(self.teacher_log_p) # Sum of cross entropy
+			h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
+			ss = h_pt_ps - h_ps
+			self.loss = ss
+
 
 			self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=self.network_params)
 
@@ -361,6 +370,7 @@ class ParallelWaveNet(object):
 				# This bias should be added before filter * gate, to each filter and gate
 				h = h + upsampled
 
+				# Should there be a scale of sqrt(0.5) in residual dilation layer?
 				h, skip = ResidualDilationLayer(h, kernel_size=self.filter_width, dilation_channels=self.dilation_channels, 
 					skip_channels=self.skip_channels, dilation_rate=dilation, name=name)
 				skip_layers.append(skip)
@@ -405,11 +415,11 @@ class ParallelWaveNet(object):
 			scale = tf.exp(tf.slice(params, [0, 0, 0], [-1, -1, 1]))
 			mean = tf.slice(params, [0, 0, 1], [-1, -1, 1])
 
-			#out = inputs * scale + mean
+			out = inputs * scale + mean
 
 			#return params#, out
 
-			return scale, mean
+			return scale, mean, out
 
 
 	def createNetwork(self):
@@ -419,10 +429,10 @@ class ParallelWaveNet(object):
 		self.encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
 
 		c = tf.expand_dims(self.conditions, 1)
-		c = tf.tile(c, [tf.shape(self.encoding)[0], tf.shape(self.encoding)[1], 1])
+		c = tf.tile(c, [1, tf.shape(self.encoding)[1], 1])
 		encoding_w_condition = tf.concat([self.encoding, c], axis=2)
 
-		x = tf.expand_dims(self.inputs, 2)
+		expanded_inputs = x = tf.expand_dims(self.inputs, 2)
 
 		#self.param_list = []
 
@@ -430,15 +440,15 @@ class ParallelWaveNet(object):
 		means = []
 
 		for i in range(self.num_flows):
-			scale, mean = self.createFlow(x, encoding_w_condition, 'Flow{}'.format(i))
+			scale, mean, x = self.createFlow(x, encoding_w_condition, 'Flow{}'.format(i))
 			#self.param_list.append(params)
 			scales.append(scale)
 			means.append(mean)
 
 		#self.s_tot = self.param_list[0][:,:,0]
 
-		self.s_tot = tf.ones([tf.shape(self.inputs)[0], tf.shape(self.inputs)[0], 1])
-		self.mu_tot = tf.zeros([tf.shape(self.inputs)[0], tf.shape(self.inputs)[0], 1])
+		self.s_tot = tf.ones([tf.shape(self.inputs)[0], tf.shape(self.inputs)[1], 1])
+		self.mu_tot = tf.zeros([tf.shape(self.inputs)[0], tf.shape(self.inputs)[1], 1])
 
 		for i in range(len(scales)):
 			self.s_tot *= scales[i]
@@ -455,14 +465,13 @@ class ParallelWaveNet(object):
 
 			self.mu_tot += mu
 
-		#self.out = probs_logistic(self.s_tot, self.mu_tot, x)
-		self.out = x * self.s_tot + self.mu_tot
+		self.out = tf.minimum(tf.maximum(expanded_inputs * self.s_tot + self.mu_tot, -1), 1)
 
 		print('@@@@ OUT', self.s_tot, self.mu_tot, x, self.out)
 
 
-	def load(self, logdir):
-		sess = tf.get_default_session()
+	def load(self, sess, logdir):
+		#sess = tf.get_default_session()
 
 		teacher_checkpoint_state = tf.train.get_checkpoint_state(self.teacher)
 		self.teacher_meta.restore(sess, teacher_checkpoint_state.model_checkpoint_path)
@@ -479,8 +488,8 @@ class ParallelWaveNet(object):
 					return False
 
 
-	def save(self, logdir, global_step, force=False):
-		sess = tf.get_default_session()
+	def save(self, sess, logdir, global_step, force=False):
+		#sess = tf.get_default_session()
 		if force or time.time() - self.last_checkpoint_time > 60:
 			if not os.path.isdir(logdir):
 				os.makedirs(logdir)
@@ -491,27 +500,27 @@ class ParallelWaveNet(object):
 		return False
 
 
-	def generate(self, inputs, conditions, encoding):
-		sess = tf.get_default_session()
+	def generate(self, sess, inputs, conditions, encoding):
+		#sess = tf.get_default_session()
 		return sess.run(self.out, feed_dict={self.inputs: inputs, self.conditions: conditions,
 			self.encoding: encoding})
 
-	def getEntropy(self, inputs, conditions, encoding):
-		sess = tf.get_default_session()
+	def getEntropy(self, sess, inputs, conditions, encoding):
+		#sess = tf.get_default_session()
 		return sess.run([self.entropy], feed_dict={self.inputs: inputs, self.conditions: conditions,
 			self.encoding: encoding})
 
-	def train(self, inputs, conditions, encoding):
-		sess = tf.get_default_session()
+	def train(self, sess, inputs, conditions, encoding, truth):
+		#sess = tf.get_default_session()
 		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.conditions: conditions,
-			self.encoding: encoding})
+			self.encoding: encoding, self.inputs_truth: truth})
 
 		return loss
 
-	def encode(self, inputs, conditions):
-		sess = tf.get_default_session()
+	def encode(self, sess, inputs, conditions):
+		#sess = tf.get_default_session()
 		return sess.run(self.teacher_encoding, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions})
 
-	def reconstruct(self, inputs, conditions):
-		sess = tf.get_default_session()
-		return sess.run(self.teacher_out, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions})
+	def reconstruct(self, sess, inputs, conditions):
+		#sess = tf.get_default_session()
+		return sess.run(self.teacher_out, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions, self.inputs_truth: inputs})

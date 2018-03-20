@@ -31,8 +31,6 @@ if __name__ == '__main__':
 	num_samples = audio_data.num_samples
 	num_classes = audio_data.classes
 
-	quantization_channels = 256
-
 	num_samples = 5120
 	num_classes = 10
 	quantization_channels = 256
@@ -51,14 +49,14 @@ if __name__ == '__main__':
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
 	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes,
-		dilations=dilations, teacher=args.teacher, num_flows=4, pool_stride=512, learning_rate=1e-5)
+		dilations=dilations, teacher=args.teacher, num_flows=4, pool_stride=512, learning_rate=1e-4)
 
 
 	with tf.Session(graph=student.graph) as sess:
 		sess.run(tf.global_variables_initializer())
 
 		#teacher.load(args.teacher)
-		student.load(args.student)
+		student.load(sess, args.student)
 
 		#print('after load')
 
@@ -67,61 +65,76 @@ if __name__ == '__main__':
 			for global_step in range(num_steps):
 				x, y = generate_wave_batch(batch_size, num_samples)
 
-				encoding = student.encode(x, y) 
+				encoding = student.encode(sess, x, y) 
 
-				noise = np.random.random(x.shape) * 2 - 1
+				num_random_samples = 5
+
+				encoding = np.tile(encoding, [num_random_samples, 1, 1])
+				y = np.tile(y, [num_random_samples, 1])
+
+				noise = np.random.logistic(0, 1, [num_random_samples, num_samples])
 
 				#teacher_logits = teacher.
+				entropy = student.getEntropy(sess, noise, y, encoding)
 
 				# Train multiple times on different samples
-				loss1 = student.train(noise, y, encoding)
-				loss2 = student.train(noise, y, encoding)
-				loss3 = student.train(noise, y, encoding)
-				loss4 = student.train(noise, y, encoding)
+				loss = student.train(sess, noise, y, encoding, x)
 
 				if global_step % print_steps == 0:
-					#entropy = student.getEntropy(noise, y, encoding)
-#					regen = teacher.reconstruct_with_encoding(x, y, encoding)
-#					output = student.generate(noise, y, encoding)
-					print(global_step, loss1, loss2, loss3, loss4)
-#
-#					plt.figure(1)
-#					plt.subplot(221)
-#
-#					plt.plot(np.arange(num_samples), x[0])	
-#
-#					plt.subplot(222)
-#					plt.plot(np.arange(num_samples), regen[0])
-#
-#					
-#					plt.subplot(223)
-#					plt.plot(np.arange(num_samples), noise[0])
-#					
-#					plt.subplot(224)
-#					plt.plot(np.arange(num_samples), output[0])
-#
-#					plt.show()
+					print(global_step, entropy, loss)
+
+					output = student.generate(sess, noise, y, encoding)
+
+					plt.figure(1, figsize=(10, 8))
+					plt.subplot(4, 2, 1)
+					plt.plot(np.arange(num_samples), x[0])
+
+					plt.subplot(4, 2, 3)
+					plt.plot(np.arange(num_samples), noise[0])
+
+					plt.subplot(4, 2, 4)
+					plt.plot(np.arange(num_samples), output[0])
+
+					plt.subplot(4, 2, 5)
+					plt.plot(np.arange(num_samples), noise[1])
+
+					plt.subplot(4, 2, 6)
+					plt.plot(np.arange(num_samples), output[1])
+
+					plt.subplot(4, 2, 7)
+					plt.plot(np.arange(num_samples), noise[2])
+
+					plt.subplot(4, 2, 8)
+					plt.plot(np.arange(num_samples), output[2])
+
+					if not os.path.isdir(os.path.join(args.student, 'figures')):
+						os.makedirs(os.path.join(args.student, 'figures'))
+
+					plt.savefig(os.path.join(args.student, 'figures', '{}.png'.format(global_step)))
+
+					plt.close()
 
 
-				student.save(args.student, global_step, force=False)
-			student.save(args.student, global_step, force=True)
+
+				student.save(sess, args.student, global_step, force=False)
+			student.save(sess, args.student, global_step, force=True)
 
 
 		if args.test:
 			for global_step in range(10):
 				x, y = generate_wave_batch(batch_size, num_samples)
 
-				encoding = student.encode(x, y) 
-				regen = student.reconstruct(x, y)
+				encoding = student.encode(sess, x, y) 
+				regen = student.reconstruct(sess, x, y)
 
 				noise = np.random.logistic(0, 1, x.shape)
-				entropy = student.getEntropy(noise, y, encoding)
-				output = student.generate(noise, y, encoding)
+				entropy = student.getEntropy(sess, noise, y, encoding)
+				output = student.generate(sess, noise, y, encoding)
 
-				loss = student.train(noise, y, encoding)
+				#loss = student.train(sess, noise, y, encoding)
 
 				print('Entropy', entropy)
-				print('loss', loss)
+				#print('loss', loss)
 
 
 				plt.figure(1)

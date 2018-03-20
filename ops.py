@@ -37,7 +37,7 @@ def ResidualDilationLayer(inputs, kernel_size, dilation_channels, skip_channels,
 
 	# 1x1 convolution
 	residual = tf.layers.conv1d(combined, filters=dilation_channels, kernel_size=1, strides=1, padding='SAME')
-	dense = inputs + residual
+	dense = (inputs + residual) * 0.7071067811865476
 
 
 	# 1x1 convolution
@@ -167,10 +167,12 @@ def discretized_mix_logistic_loss(x,l,sum_all=True):
     log_probs = tf.where(x < -0.999, log_cdf_plus, tf.where(x > 0.999, log_one_minus_cdf_min, tf.where(cdf_delta > 1e-5, tf.log(tf.maximum(cdf_delta, 1e-12)), log_pdf_mid - np.log(127.5))))
 
     log_probs = tf.reduce_sum(log_probs,2) + log_prob_from_logits(logit_probs)
+
     if sum_all:
         return -tf.reduce_sum(log_sum_exp(log_probs))
     else:
-        return -tf.reduce_sum(log_sum_exp(log_probs),[1,2])
+        #return -tf.reduce_sum(log_sum_exp(log_probs),1)
+        return -tf.expand_dims(log_sum_exp(log_probs), 2)
 
 
 def sample_from_discretized_mix_logistic(l,nr_mix):
@@ -209,6 +211,7 @@ def probs_logistic(scale, mu, y, num_classes=256, log_scale_min=-14):
     cdf_min = tf.nn.sigmoid(min_in)
     cdf_delta = cdf_plus - cdf_min
     return cdf_delta
+    #return tf.clip_by_value(cdf_delta,1e-5, 1.)
 
 
 def _flatten(x):
