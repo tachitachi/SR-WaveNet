@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
 
 		if args.test:
-			for global_step in range(10):
+			for global_step in range(20):
 				x, y = generate_wave_batch(batch_size, num_samples)
 
 				encoding = student.encode(sess, x, y) 
