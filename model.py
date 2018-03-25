@@ -524,3 +524,145 @@ class ParallelWaveNet(object):
 	def reconstruct(self, sess, inputs, conditions):
 		#sess = tf.get_default_session()
 		return sess.run(self.teacher_out, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions, self.inputs_truth: inputs})
+
+
+
+class SiameseWaveNet(object):
+	def __init__(self, input_size, output_dimensions, dilations, margin=5.0, filter_width=2, dilation_channels=32, 
+		skip_channels=256, name='SiameseWaveNet', learning_rate=0.001):
+
+		self.input_size = input_size
+		self.output_dimensions = output_dimensions
+		self.dilations = dilations
+		self.margin = margin
+		self.filter_width = filter_width
+		self.dilation_channels = dilation_channels
+		self.skip_channels = skip_channels
+
+
+		self.graph = tf.Graph()
+		with self.graph.as_default():
+		
+			with tf.variable_scope(name):
+				self.inputs_left, self.inputs_right, self.embedding_left, self.embedding_right = self.createNetwork()
+
+				self.network_params = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
+
+			self.labels, self.distance, self.loss = self.create_loss()
+			self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
+
+
+			self.saver = tf.train.Saver(self.network_params)
+			self.last_checkpoint_time = time.time()
+
+	def createSiamesePart(self, h, reuse):
+		with tf.variable_scope('siamese', reuse=reuse):
+			skip_layers = []
+
+			h = DilatedCausalConv1d(h, self.filter_width, channels=self.dilation_channels, dilation_rate=1, name='causal_conv')
+
+			for i in range(len(self.dilations)):
+				dilation = self.dilations[i]
+				name = 'dilated_conv_{}'.format(i)
+				h, skip = ResidualDilationLayer(h, kernel_size=self.filter_width, dilation_channels=self.dilation_channels, 
+					skip_channels=self.skip_channels, dilation_rate=dilation, name=name)
+				skip_layers.append(skip)
+
+
+			total = tf.reduce_sum(skip_layers, axis=0)
+			total = tf.nn.relu(total)
+
+			total = tf.layers.conv1d(total, filters=self.skip_channels, kernel_size=1, strides=1, padding='SAME')
+			total = tf.nn.relu(total)
+
+			total = tf.layers.conv1d(total, filters=self.output_dimensions, kernel_size=1, strides=1, padding='SAME')
+
+			embedding = tf.nn.pool(total, window_shape=(self.input_size,), strides=(1,), pooling_type='AVG', padding='VALID')
+
+			return embedding
+
+
+	def createNetwork(self):
+		inputs_left = tf.placeholder(tf.float32, [None, None])
+		inputs_right = tf.placeholder(tf.float32, [None, None])
+
+		h_left = tf.expand_dims(inputs_left, 2)
+		h_right = tf.expand_dims(inputs_right, 2)
+
+		emebedding_left = self.createSiamesePart(h_left, reuse=False)
+		embedding_right = self.createSiamesePart(h_right, reuse=True)
+		
+		return inputs_left, inputs_right, emebedding_left, embedding_right
+
+	def create_loss(self):
+
+		labels = tf.placeholder(tf.float32, [None])
+
+		s_embedding_left = tf.squeeze(self.embedding_left, 1)
+		s_embedding_right = tf.squeeze(self.embedding_right, 1)
+
+		# calculate euclidian distance
+		# add a small amount to avoid nans
+		distance = tf.sqrt(1e-8 + tf.reduce_sum(tf.pow(s_embedding_left - s_embedding_right, 2), axis=1))
+
+		print(s_embedding_left, distance)
+
+
+		# In the original formula: http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
+		# Y = 0 Corresponds to "Same", Y = 1 Corresponds to "different"
+		# (1 - Y) * 1/2 * distance^2 + (Y) * 1/2 * (max(0, m - distance))^2
+		# In this implementation, y = 1 means "same", and y = 0 means "different"
+		# So we flip (1 - Y) and Y
+		m = tf.constant(float(self.margin), tf.float32)
+		#losses = (1 - labels) * 0.5 * tf.pow(distance, 2) + labels * 0.5 * tf.pow(tf.maximum(0.0, m - distance), 2)
+		losses = labels * 0.5 * tf.pow(distance, 2) + (1 - labels) * 0.5 * tf.pow(tf.maximum(0.0, m - distance), 2)
+
+		loss = tf.reduce_mean(losses)
+
+		return labels, distance, loss
+
+
+	def load(self, sess, logdir):
+		if logdir is not None and os.path.exists(logdir):
+			checkpoint_state = tf.train.get_checkpoint_state(logdir)
+			if checkpoint_state is not None:
+				try:
+					self.saver.restore(sess, checkpoint_state.model_checkpoint_path)
+					print('Restoring previous session')
+					return True
+				except (tf.errors.NotFoundError):
+					print('Could not find checkpoint at %s', checkpoint_state.model_checkpoint_path)
+					return False
+
+
+	def save(self, sess, logdir, global_step, force=False):
+		if force or time.time() - self.last_checkpoint_time > 60:
+			if not os.path.isdir(logdir):
+				os.makedirs(logdir)
+			self.saver.save(sess, os.path.join(logdir, 'model.ckpt'), global_step)
+			self.last_checkpoint_time = time.time()
+			return True
+
+		return False
+
+	def train(self, sess, inputs_left, inputs_right, labels):
+		loss, _, distance = sess.run([self.loss, self.optimize, self.distance], feed_dict={
+			self.inputs_left: inputs_left,
+			self.inputs_right: inputs_right,
+			self.labels: labels	
+		})
+		return loss, distance
+
+
+	def get_embedding(self, sess, inputs):
+		embedding = sess.run(self.embedding_left, feed_dict={
+			self.inputs_left: inputs
+		})
+		return embedding
+
+	def get_distance(self, sess, inputs_left, inputs_right):
+		distance = sess.run(self.distance, feed_dict={
+			self.inputs_left: inputs_left,
+			self.inputs_right: inputs_right
+		})
+		return distance
