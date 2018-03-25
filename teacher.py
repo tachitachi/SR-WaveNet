@@ -9,6 +9,8 @@ from model import WaveNetAutoEncoder
 
 from nsynth import NsynthDataReader
 
+from scipy.io import wavfile
+
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser()
@@ -86,6 +88,9 @@ if __name__ == '__main__':
 				x, y = audio_data.next()
 
 				regen = teacher.reconstruct(x, y)
+
+				wavfile.write('test_wav_{}.wav'.format(global_step), 16000, x[0])
+				wavfile.write('regen_wav_{}.wav'.format(global_step), 16000, regen[0])
 
 
 				plt.figure(1)
