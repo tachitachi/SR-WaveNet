@@ -5,16 +5,18 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-from data import AudioData
+#from data import AudioData
 from model import ParallelWaveNet
 
-from simple_audio import generate_wave_batch
+#from simple_audio import generate_wave_batch
+from nsynth import NsynthDataReader
 
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--teacher', type=str, default='teachers/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
 	parser.add_argument('--student', type=str, default='students/%d' % int(time.time() * 1000), help='Directory where checkpoint and summary is stored')
+	parser.add_argument('--start', type=int, default=0, help='Starting index')
 
 	parser.add_argument('--train', action='store_true', help='Train student')
 	parser.add_argument('--test', action='store_true', help='Test student')
@@ -22,19 +24,13 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	batch_size = 1
-	num_steps = 200000
-	print_steps = 100
+	num_steps = 1000000
+	print_steps = 25
 
-	last_checkpoint_time = time.time()
-
-	audio_data = AudioData()
-	num_samples = audio_data.num_samples
-	num_classes = audio_data.classes
-
-	num_samples = 5120
-	num_classes = 10
-	quantization_channels = 256
-
+	#audio_data = AudioData()
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
+	num_samples = 64000
+	num_classes = 128
 
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
@@ -49,28 +45,32 @@ if __name__ == '__main__':
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
 	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes,
-		dilations=dilations, teacher=args.teacher, num_flows=4, pool_stride=512, learning_rate=1e-4)
+		dilations=dilations, teacher=args.teacher, dilation_channels=32, skip_channels=128, num_flows=4, pool_stride=512, learning_rate=1e-4)
 
 
 	with tf.Session(graph=student.graph) as sess:
 		sess.run(tf.global_variables_initializer())
 
+		print('initailized')
+
 		#teacher.load(args.teacher)
 		student.load(sess, args.student)
+
+		print('loaded')
 
 		#print('after load')
 
 
 		if args.train:
-			for global_step in range(num_steps):
-				x, y = generate_wave_batch(batch_size, num_samples)
+			for global_step in range(args.start, num_steps):
+				x, y = audio_data.next()
 
 				encoding = student.encode(sess, x, y) 
 
 				num_random_samples = 5
 
-				encoding = np.tile(encoding, [num_random_samples, 1, 1])
-				y = np.tile(y, [num_random_samples, 1])
+				#encoding = np.tile(encoding, [num_random_samples, 1, 1])
+				#y = np.tile(y, [num_random_samples, 1])
 
 				noise = np.random.logistic(0, 1, [num_random_samples, num_samples])
 
@@ -85,9 +85,14 @@ if __name__ == '__main__':
 
 					output = student.generate(sess, noise, y, encoding)
 
+					regen = student.reconstruct(sess, x, y)
+
 					plt.figure(1, figsize=(10, 8))
 					plt.subplot(4, 2, 1)
 					plt.plot(np.arange(num_samples), x[0])
+
+					plt.subplot(4, 2, 2)
+					plt.plot(np.arange(num_samples), regen[0])
 
 					plt.subplot(4, 2, 3)
 					plt.plot(np.arange(num_samples), noise[0])
@@ -95,11 +100,13 @@ if __name__ == '__main__':
 					plt.subplot(4, 2, 4)
 					plt.plot(np.arange(num_samples), output[0])
 
+
 					plt.subplot(4, 2, 5)
 					plt.plot(np.arange(num_samples), noise[1])
 
 					plt.subplot(4, 2, 6)
 					plt.plot(np.arange(num_samples), output[1])
+
 
 					plt.subplot(4, 2, 7)
 					plt.plot(np.arange(num_samples), noise[2])
@@ -122,7 +129,7 @@ if __name__ == '__main__':
 
 		if args.test:
 			for global_step in range(20):
-				x, y = generate_wave_batch(batch_size, num_samples)
+				x, y = audio_data.next()
 
 				encoding = student.encode(sess, x, y) 
 				regen = student.reconstruct(sess, x, y)

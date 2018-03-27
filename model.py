@@ -312,11 +312,11 @@ class ParallelWaveNet(object):
 			# Prevent gradients from flowing through teacher network?
 			self.teacher_logits =  tf.stop_gradient(self.graph.get_collection('Logits_d')[0])
 			#self.teacher_logits =  self.graph.get_collection('Logits_d')[0]
-			self.teacher_encoding = self.graph.get_collection('Encoding_output')[0]
+			self.teacher_encoding = tf.stop_gradient(self.graph.get_collection('Encoding_output')[0])
 
 			self.teacher_inputs = self.graph.get_collection('Inputs_e')[0]
 			#self.conditions = graph.get_collection('Conditions')[0]
-			self.teacher_out = self.graph.get_collection('Out_e')[0]
+			self.teacher_out = tf.stop_gradient(self.graph.get_collection('Out_e')[0])
 			#logits =  graph.get_collection('Logits_e')[0]
 
 			#log_prob_tf = tf.nn.log_softmax(self.logits)
@@ -343,7 +343,27 @@ class ParallelWaveNet(object):
 			self.loss = ss
 
 
-			self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=self.network_params)
+			self.optimizer = tf.train.AdamOptimizer(learning_rate)
+
+			grads_and_vars = self.optimizer.compute_gradients(self.loss, var_list=self.network_params)
+
+			self.grads = []
+			self.placeholder_grads = []
+			placeholder_grads_and_vars = []
+			for grads, var in grads_and_vars:
+				if grads is not None:
+					self.grads.append(grads)
+					placeholder = tf.placeholder(tf.float32, shape=grads.get_shape())
+					placeholder_grads_and_vars.append((placeholder, var))
+					self.placeholder_grads.append(placeholder)
+
+			self.optimize = self.optimizer.apply_gradients(placeholder_grads_and_vars)
+
+			print('placeholders', self.placeholder_grads)
+
+
+
+			#self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=self.network_params)
 
 			self.saver = tf.train.Saver(self.network_params)
 			self.last_checkpoint_time = time.time()
@@ -507,15 +527,41 @@ class ParallelWaveNet(object):
 
 	def getEntropy(self, sess, inputs, conditions, encoding):
 		#sess = tf.get_default_session()
-		return sess.run([self.entropy], feed_dict={self.inputs: inputs, self.conditions: conditions,
-			self.encoding: encoding})
+
+		num_inputs = inputs.shape[0]
+
+		entropies = np.zeros(num_inputs)
+
+		for i in range(num_inputs):
+			entropy = sess.run(self.entropy, feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
+				self.encoding: encoding})
+			entropies[i] = entropy
+
+		return entropies
 
 	def train(self, sess, inputs, conditions, encoding, truth):
-		#sess = tf.get_default_session()
-		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.conditions: conditions,
-			self.encoding: encoding, self.inputs_truth: truth})
 
-		return loss
+		num_inputs = inputs.shape[0]
+		all_grads = []
+		losses = []
+		# get gradients of each sample
+		for i in range(num_inputs):
+			grads, loss = sess.run([self.grads, self.loss], feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
+				self.encoding: encoding, self.inputs_truth: truth})
+			all_grads.append(grads)
+			losses.append(loss)
+
+		# average over all samples
+		mean_grads = list(map(lambda x: np.sum(x, 0) / float(num_inputs), list(zip(*all_grads))))
+		mean_loss = np.mean(losses)
+
+		feed_dict = {placeholder: grad for placeholder, grad in zip(self.placeholder_grads, mean_grads)}
+
+
+		#sess = tf.get_default_session()
+		sess.run(self.optimize, feed_dict=feed_dict)
+
+		return mean_loss
 
 	def encode(self, sess, inputs, conditions):
 		#sess = tf.get_default_session()
