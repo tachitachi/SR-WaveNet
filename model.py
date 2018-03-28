@@ -331,16 +331,22 @@ class ParallelWaveNet(object):
 
 			# Should the +2 be on the outside? Or should it be +2T on the outside?
 			# Should it be mean(sum(ln(s))) ?
-			self.entropy = tf.reduce_mean(tf.log(self.s_tot) + 2.)
+			self.entropy = tf.reduce_sum(tf.log(self.s_tot) + 2.)
 
-			self.probs_logistic = probs_logistic(self.s_tot, self.mu_tot, self.out)
+			#self.probs_logistic = probs_logistic(self.s_tot, self.mu_tot, self.out)
+
+			# how many mixtures for teacher?
+			stft1 = tf.contrib.signal.stft(sample_from_discretized_mix_logistic(self.teacher_logits, 5), 512, 256)
+			stft2 = tf.contrib.signal.stft(self.out, 512, 256)
+			self.power_loss = tf.reduce_sum(tf.sqrt((tf.sqrt(tf.real(stft1) ** 2 + tf.imag(stft1) ** 2) - tf.sqrt(tf.real(stft2) ** 2 + tf.imag(stft2) ** 2)) ** 2))
 
 			# the output of the student network should flow through the teacher network
-			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=False)
+			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=True)
 			h_pt_ps = tf.reduce_sum(self.teacher_log_p) # Sum of cross entropy
-			h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
+			#h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
+			h_ps = self.entropy
 			ss = h_pt_ps - h_ps
-			self.loss = ss
+			self.loss = ss# + self.power_loss
 
 
 			self.optimizer = tf.train.AdamOptimizer(learning_rate)
@@ -359,8 +365,11 @@ class ParallelWaveNet(object):
 
 			self.optimize = self.optimizer.apply_gradients(placeholder_grads_and_vars)
 
-			print('placeholders', self.placeholder_grads)
 
+			tf.add_to_collection('Inputs', self.inputs)
+			tf.add_to_collection('Conditions', self.conditions)
+			tf.add_to_collection('Encoding', self.encoding)
+			tf.add_to_collection('Out', self.out)
 
 
 			#self.optimize = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, var_list=self.network_params)

@@ -4,6 +4,7 @@ import os
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from scipy.io import wavfile
 
 #from data import AudioData
 from model import ParallelWaveNet
@@ -67,7 +68,7 @@ if __name__ == '__main__':
 
 				encoding = student.encode(sess, x, y) 
 
-				num_random_samples = 5
+				num_random_samples = 1
 
 				#encoding = np.tile(encoding, [num_random_samples, 1, 1])
 				#y = np.tile(y, [num_random_samples, 1])
@@ -101,18 +102,18 @@ if __name__ == '__main__':
 					plt.plot(np.arange(num_samples), output[0])
 
 
-					plt.subplot(4, 2, 5)
-					plt.plot(np.arange(num_samples), noise[1])
-
-					plt.subplot(4, 2, 6)
-					plt.plot(np.arange(num_samples), output[1])
-
-
-					plt.subplot(4, 2, 7)
-					plt.plot(np.arange(num_samples), noise[2])
-
-					plt.subplot(4, 2, 8)
-					plt.plot(np.arange(num_samples), output[2])
+#					plt.subplot(4, 2, 5)
+#					plt.plot(np.arange(num_samples), noise[1])
+#
+#					plt.subplot(4, 2, 6)
+#					plt.plot(np.arange(num_samples), output[1])
+#
+#
+#					plt.subplot(4, 2, 7)
+#					plt.plot(np.arange(num_samples), noise[2])
+#
+#					plt.subplot(4, 2, 8)
+#					plt.plot(np.arange(num_samples), output[2])
 
 					if not os.path.isdir(os.path.join(args.student, 'figures')):
 						os.makedirs(os.path.join(args.student, 'figures'))
@@ -120,6 +121,14 @@ if __name__ == '__main__':
 					plt.savefig(os.path.join(args.student, 'figures', '{}.png'.format(global_step)))
 
 					plt.close()
+
+					if global_step % 1000 == 0:
+						if not os.path.isdir(os.path.join(args.student, 'audio')):
+							os.makedirs(os.path.join(args.student, 'audio'))
+
+						wavfile.write(os.path.join(args.student, 'audio', 'test_wav_{}.wav'.format(global_step)), 16000, x[0])
+						wavfile.write(os.path.join(args.student, 'audio', 'regen_wav_{}.wav'.format(global_step)), 16000, regen[0])
+						wavfile.write(os.path.join(args.student, 'audio', 'parallel_wav_{}.wav'.format(global_step)), 16000, output[0])
 
 
 
