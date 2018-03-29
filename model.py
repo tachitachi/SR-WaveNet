@@ -339,6 +339,7 @@ class ParallelWaveNet(object):
 			stft1 = tf.contrib.signal.stft(self.inputs_truth, 512, 256)
 			stft2 = tf.contrib.signal.stft(tf.squeeze(self.out, 2), 512, 256)
 
+			# φ(x) = |STFT(x)|
 			# Absolute value ^ 2
 			# Average over time dimension first
 			s1 = tf.reduce_mean(tf.abs(stft1) ** 2, 1)
@@ -352,19 +353,21 @@ class ParallelWaveNet(object):
 			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=True)
 			h_pt_ps = tf.reduce_sum(self.teacher_log_p) # Sum of cross entropy
 			#h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
-			h_ps = self.entropy
+			h_ps = self.entropy * 0.25
 			ss = h_pt_ps - h_ps
 			self.loss = ss + self.power_loss
 
 
 			self.optimizer = tf.train.AdamOptimizer(learning_rate)
 
-			grads_and_vars = self.optimizer.compute_gradients(self.loss, var_list=self.network_params)
+			unclipped_grads, var_list = zip(*self.optimizer.compute_gradients(self.loss, var_list=self.network_params))
+			clipped_grads, _ = tf.clip_by_global_norm(unclipped_grads, 40.0)
 
 			self.grads = []
 			self.placeholder_grads = []
 			placeholder_grads_and_vars = []
-			for grads, var in grads_and_vars:
+			for grads, var in zip(clipped_grads, var_list):
+
 				if grads is not None:
 					self.grads.append(grads)
 					placeholder = tf.placeholder(tf.float32, shape=grads.get_shape())

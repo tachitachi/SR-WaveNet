@@ -32,7 +32,8 @@ if __name__ == '__main__':
 	last_checkpoint_time = time.time()
 
 	#audio_data = AudioData()
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
+	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size)
 	num_samples = 64000
 	num_classes = 128
 
