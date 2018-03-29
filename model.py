@@ -336,11 +336,17 @@ class ParallelWaveNet(object):
 
 			#self.probs_logistic = probs_logistic(self.s_tot, self.mu_tot, self.out)
 
-			# how many mixtures for teacher?
-			stft1 = tf.contrib.signal.stft(self.teacher_out_d, 512, 256)
+			stft1 = tf.contrib.signal.stft(self.inputs_truth, 512, 256)
 			stft2 = tf.contrib.signal.stft(tf.squeeze(self.out, 2), 512, 256)
-			stft_diff = stft1 - stft2
-			self.power_loss = tf.reduce_sum(tf.sqrt(tf.real(stft_diff) ** 2 + tf.imag(stft_diff) ** 2))
+
+			# Absolute value ^ 2
+			# Average over time dimension first
+			s1 = tf.reduce_mean(tf.abs(stft1) ** 2, 1)
+			s2 = tf.reduce_mean(tf.abs(stft2) ** 2, 1)
+
+			stft_diff = s1 - s2
+			# ||φ(g(z, c)) − φ(y)||2
+			self.power_loss = tf.reduce_sum(tf.norm(stft_diff) ** 2)
 
 			# the output of the student network should flow through the teacher network
 			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=True)

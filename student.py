@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
 					plt.close()
 
-					if global_step % 1000 == 0:
+					if global_step % 200 == 0:
 						if not os.path.isdir(os.path.join(args.student, 'audio')):
 							os.makedirs(os.path.join(args.student, 'audio'))
 
