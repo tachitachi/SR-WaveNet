@@ -317,6 +317,7 @@ class ParallelWaveNet(object):
 			self.teacher_inputs = self.graph.get_collection('Inputs_e')[0]
 			#self.conditions = graph.get_collection('Conditions')[0]
 			self.teacher_out = tf.stop_gradient(self.graph.get_collection('Out_e')[0])
+			self.teacher_out_d = tf.stop_gradient(self.graph.get_collection('Out_d')[0])
 			#logits =  graph.get_collection('Logits_e')[0]
 
 			#log_prob_tf = tf.nn.log_softmax(self.logits)
@@ -336,9 +337,10 @@ class ParallelWaveNet(object):
 			#self.probs_logistic = probs_logistic(self.s_tot, self.mu_tot, self.out)
 
 			# how many mixtures for teacher?
-			stft1 = tf.contrib.signal.stft(sample_from_discretized_mix_logistic(self.teacher_logits, 5), 512, 256)
-			stft2 = tf.contrib.signal.stft(self.out, 512, 256)
-			self.power_loss = tf.reduce_sum(tf.sqrt((tf.sqrt(tf.real(stft1) ** 2 + tf.imag(stft1) ** 2) - tf.sqrt(tf.real(stft2) ** 2 + tf.imag(stft2) ** 2)) ** 2))
+			stft1 = tf.contrib.signal.stft(self.teacher_out_d, 512, 256)
+			stft2 = tf.contrib.signal.stft(tf.squeeze(self.out, 2), 512, 256)
+			stft_diff = stft1 - stft2
+			self.power_loss = tf.reduce_sum(tf.sqrt(tf.real(stft_diff) ** 2 + tf.imag(stft_diff) ** 2))
 
 			# the output of the student network should flow through the teacher network
 			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=True)
@@ -346,7 +348,7 @@ class ParallelWaveNet(object):
 			#h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
 			h_ps = self.entropy
 			ss = h_pt_ps - h_ps
-			self.loss = ss# + self.power_loss
+			self.loss = ss + self.power_loss
 
 
 			self.optimizer = tf.train.AdamOptimizer(learning_rate)
@@ -553,16 +555,19 @@ class ParallelWaveNet(object):
 		num_inputs = inputs.shape[0]
 		all_grads = []
 		losses = []
+		power_losses = []
 		# get gradients of each sample
 		for i in range(num_inputs):
-			grads, loss = sess.run([self.grads, self.loss], feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
+			grads, loss, power_loss = sess.run([self.grads, self.loss, self.power_loss], feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
 				self.encoding: encoding, self.inputs_truth: truth})
 			all_grads.append(grads)
 			losses.append(loss)
+			power_losses.append(power_loss)
 
 		# average over all samples
 		mean_grads = list(map(lambda x: np.sum(x, 0) / float(num_inputs), list(zip(*all_grads))))
 		mean_loss = np.mean(losses)
+		mean_power_loss = np.mean(power_losses)
 
 		feed_dict = {placeholder: grad for placeholder, grad in zip(self.placeholder_grads, mean_grads)}
 
@@ -570,7 +575,7 @@ class ParallelWaveNet(object):
 		#sess = tf.get_default_session()
 		sess.run(self.optimize, feed_dict=feed_dict)
 
-		return mean_loss
+		return mean_loss, mean_power_loss
 
 	def encode(self, sess, inputs, conditions):
 		#sess = tf.get_default_session()

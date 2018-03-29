@@ -79,10 +79,10 @@ if __name__ == '__main__':
 				entropy = student.getEntropy(sess, noise, y, encoding)
 
 				# Train multiple times on different samples
-				loss = student.train(sess, noise, y, encoding, x)
+				loss, power_loss = student.train(sess, noise, y, encoding, x)
 
 				if global_step % print_steps == 0:
-					print(global_step, entropy, loss)
+					print('Step: {:6d} | Entropy: {} | Power Loss: {:.4f} | Total Loss: {:.4f}'.format(global_step, str(entropy), power_loss, loss))
 
 					output = student.generate(sess, noise, y, encoding)
 
