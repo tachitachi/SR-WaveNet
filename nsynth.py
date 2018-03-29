@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 
 class NsynthDataReader(object):
-	def __init__(self, filepath, batch_size):
+	def __init__(self, filepath, batch_size, num_samples=16000):
 
 
 		def _parse_function(example_proto):
@@ -19,8 +19,9 @@ class NsynthDataReader(object):
 			parsed_features = tf.parse_single_example(example_proto, features)
 
 			pitch = tf.one_hot(tf.squeeze(parsed_features['pitch']), 128)
+			audio = tf.slice(parsed_features['audio'], [0], [num_samples])
 
-			return parsed_features['audio'], pitch
+			return audio, pitch
 
 		dataset = tf.data.TFRecordDataset(filepath)
 		dataset = dataset.map(_parse_function)

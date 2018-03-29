@@ -31,11 +31,12 @@ if __name__ == '__main__':
 
 	last_checkpoint_time = time.time()
 
+	num_samples = 16384
+	num_classes = 128
+
 	#audio_data = AudioData()
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size)
-	num_samples = 64000
-	num_classes = 128
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
 
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
@@ -77,6 +78,14 @@ if __name__ == '__main__':
 					plt.savefig(os.path.join(args.teacher, 'figures', '{}.png'.format(global_step)))
 
 					plt.close()
+
+
+					if global_step % 500 == 0:
+						if not os.path.isdir(os.path.join(args.teacher, 'audio')):
+							os.makedirs(os.path.join(args.teacher, 'audio'))
+
+						wavfile.write(os.path.join(args.teacher, 'audio', 'test_wav_{}.wav'.format(global_step)), 16000, x[0])
+						wavfile.write(os.path.join(args.teacher, 'audio', 'regen_wav_{}.wav'.format(global_step)), 16000, regen[0])
 
 				# Checkpoint once per minute
 				teacher.save(args.teacher, global_step, force=False)
