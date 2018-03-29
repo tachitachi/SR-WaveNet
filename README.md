@@ -3,7 +3,7 @@
 Download nsynth dataset (json version) from: 
 
 ```
-https://magenta.tensorflow.org/datasets/nsynth#instrument-sources
+https://magenta.tensorflow.org/datasets/nsynth#files
 ```
 
 And extract into a folder located at:
