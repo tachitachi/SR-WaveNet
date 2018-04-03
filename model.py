@@ -492,9 +492,12 @@ class ParallelWaveNet(object):
 		self.conditions = tf.placeholder(tf.float32, [None, self.condition_size])
 		self.encoding = tf.placeholder(tf.float32, [None, None, self.latent_channels])
 
-		c = tf.expand_dims(self.conditions, 1)
-		c = tf.tile(c, [1, tf.shape(self.encoding)[1], 1])
-		encoding_w_condition = tf.concat([self.encoding, c], axis=2)
+		if self.condition_size > 0:
+			c = tf.expand_dims(self.conditions, 1)
+			c = tf.tile(c, [1, tf.shape(self.encoding)[1], 1])
+			encoding_w_condition = tf.concat([self.encoding, c], axis=2)
+		else:
+			encoding_w_condition = self.encoding
 
 		expanded_inputs = x = tf.expand_dims(self.inputs, 2)
 
@@ -564,12 +567,15 @@ class ParallelWaveNet(object):
 		return False
 
 
-	def generate(self, sess, inputs, conditions, encoding):
+	def generate(self, sess, inputs, encoding, conditions=None):
 		#sess = tf.get_default_session()
-		return sess.run(self.out, feed_dict={self.inputs: inputs, self.conditions: conditions,
-			self.encoding: encoding})
+		if conditions:
+			return sess.run(self.out, feed_dict={self.inputs: inputs, self.conditions: conditions,
+				self.encoding: encoding})
+		else:
+			return sess.run(self.out, feed_dict={self.inputs: inputs, self.encoding: encoding})
 
-	def getEntropy(self, sess, inputs, conditions, encoding):
+	def getEntropy(self, sess, inputs, encoding, conditions=None):
 		#sess = tf.get_default_session()
 
 		num_inputs = inputs.shape[0]
@@ -577,18 +583,24 @@ class ParallelWaveNet(object):
 		entropies = np.zeros(num_inputs)
 
 		for i in range(num_inputs):
-			entropy = sess.run(self.entropy, feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
-				self.encoding: encoding})
+			if conditions:
+				entropy = sess.run(self.entropy, feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
+					self.encoding: encoding})
+			else:
+				entropy = sess.run(self.entropy, feed_dict={self.inputs: [inputs[i]], self.encoding: encoding})
 			entropies[i] = entropy
 
 		return entropies
 
-	def getEntropy_fast(self, sess, inputs, conditions, encoding):
-		return sess.run(self.entropy, feed_dict={self.inputs: inputs, self.conditions: conditions,
-				self.encoding: encoding})
+	def getEntropy_fast(self, sess, inputs, encoding, conditions=None):
+		if conditions:
+			return sess.run(self.entropy, feed_dict={self.inputs: inputs, self.conditions: conditions,
+					self.encoding: encoding})
+		else:
+			return sess.run(self.entropy, feed_dict={self.inputs: inputs, self.encoding: encoding})
 
 
-	def train(self, sess, inputs, conditions, encoding, truth):
+	def train(self, sess, inputs, truth, encoding, conditions=None):
 
 		num_inputs = inputs.shape[0]
 		all_grads = []
@@ -596,8 +608,12 @@ class ParallelWaveNet(object):
 		power_losses = []
 		# get gradients of each sample
 		for i in range(num_inputs):
-			grads, loss, power_loss = sess.run([self.grads, self.loss, self.power_loss], feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
-				self.encoding: encoding, self.inputs_truth: truth})
+			if conditions:
+				grads, loss, power_loss = sess.run([self.grads, self.loss, self.power_loss], feed_dict={self.inputs: [inputs[i]], self.conditions: conditions,
+					self.encoding: encoding, self.inputs_truth: truth})
+			else:
+				grads, loss, power_loss = sess.run([self.grads, self.loss, self.power_loss], feed_dict={self.inputs: [inputs[i]], 
+					self.encoding: encoding, self.inputs_truth: truth})
 			all_grads.append(grads)
 			losses.append(loss)
 			power_losses.append(power_loss)
@@ -615,19 +631,29 @@ class ParallelWaveNet(object):
 
 		return mean_loss, mean_power_loss
 
-	def train_fast(self, sess, inputs, conditions, encoding, truth):
-		_, loss, power_loss = sess.run([self.optimize_fast, self.loss, self.power_loss], feed_dict={self.inputs: inputs, self.conditions: conditions,
-				self.encoding: encoding, self.inputs_truth: truth})
+	def train_fast(self, sess, inputs, truth, encoding, conditions=None):
+		if conditions:
+			_, loss, power_loss = sess.run([self.optimize_fast, self.loss, self.power_loss], feed_dict={self.inputs: inputs, self.conditions: conditions,
+					self.encoding: encoding, self.inputs_truth: truth})
+		else:
+			_, loss, power_loss = sess.run([self.optimize_fast, self.loss, self.power_loss], feed_dict={self.inputs: inputs,
+					self.encoding: encoding, self.inputs_truth: truth})
 
 		return loss, power_loss
 
-	def encode(self, sess, inputs, conditions):
+	def encode(self, sess, inputs, conditions=None):
 		#sess = tf.get_default_session()
-		return sess.run(self.teacher_encoding, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions})
+		if conditions:
+			return sess.run(self.teacher_encoding, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions})
+		else:
+			return sess.run(self.teacher_encoding, feed_dict={self.teacher_inputs: inputs})
 
-	def reconstruct(self, sess, inputs, conditions):
+	def reconstruct(self, sess, inputs, conditions=None):
 		#sess = tf.get_default_session()
-		return sess.run(self.teacher_out, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions, self.inputs_truth: inputs})
+		if conditions:
+			return sess.run(self.teacher_out, feed_dict={self.teacher_inputs: inputs, self.conditions: conditions, self.inputs_truth: inputs})
+		else:
+			return sess.run(self.teacher_out, feed_dict={self.teacher_inputs: inputs, self.inputs_truth: inputs})
 
 
 

@@ -27,13 +27,15 @@ if __name__ == '__main__':
 	batch_size = 1
 	num_steps = 1000000
 	print_steps = 25
+	use_condition = False
 
 	num_samples = 16384
-	num_classes = 128
+	num_classes = 128 if use_condition else 0
 
 	#audio_data = AudioData()
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
+	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60.tfrecord'), batch_size, num_samples)
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
@@ -66,25 +68,27 @@ if __name__ == '__main__':
 		if args.train:
 			for global_step in range(args.start, num_steps):
 				x, y = audio_data.next()
+				if not use_condition:
+					y = None
 
 				encoding = student.encode(sess, x, y) 
 
 				num_random_samples = 3
 
 				encoding = np.tile(encoding, [num_random_samples, 1, 1])
-				y_stack = np.tile(y, [num_random_samples, 1])
+				y_stack = np.tile(y, [num_random_samples, 1]) if y else None
 
 				noise = np.random.logistic(0, 1, [num_random_samples, num_samples])
 
 				# Train multiple times on different samples
-				loss, power_loss = student.train_fast(sess, noise, y_stack, encoding, x)
+				loss, power_loss = student.train_fast(sess, noise, x, encoding, y_stack)
 
 				if global_step % print_steps == 0:
 					#teacher_logits = teacher.
-					entropy = student.getEntropy_fast(sess, noise, y_stack, encoding)
+					entropy = student.getEntropy_fast(sess, noise, encoding, y_stack)
 					print('Step: {:6d} | Entropy: {} | Power Loss: {:.4f} | Total Loss: {:.4f}'.format(global_step, str(entropy), power_loss, loss))
 
-					output = student.generate(sess, noise, y_stack, encoding)
+					output = student.generate(sess, noise, encoding, y_stack)
 
 					regen = student.reconstruct(sess, x, y)
 
@@ -139,13 +143,15 @@ if __name__ == '__main__':
 		if args.test:
 			for global_step in range(20):
 				x, y = audio_data.next()
+				if not use_condition:
+					y = None
 
 				encoding = student.encode(sess, x, y) 
 				regen = student.reconstruct(sess, x, y)
 
 				noise = np.random.logistic(0, 1, x.shape)
-				entropy = student.getEntropy(sess, noise, y, encoding)
-				output = student.generate(sess, noise, y, encoding)
+				entropy = student.getEntropy(sess, noise, encoding, y)
+				output = student.generate(sess, noise, encoding, y)
 
 				#loss = student.train(sess, noise, y, encoding)
 
