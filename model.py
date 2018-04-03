@@ -355,13 +355,13 @@ class ParallelWaveNet(object):
 			#h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
 			h_ps = self.entropy * 0.25
 			ss = h_pt_ps - h_ps
-			self.loss = ss + self.power_loss
+			self.loss = (ss + self.power_loss) / tf.cast(tf.shape(self.inputs)[0], tf.float32)
 
 
 			self.optimizer = tf.train.AdamOptimizer(learning_rate)
 
 			unclipped_grads, var_list = zip(*self.optimizer.compute_gradients(self.loss, var_list=self.network_params))
-			clipped_grads, _ = tf.clip_by_global_norm(unclipped_grads, 40.0)
+			clipped_grads, _ = tf.clip_by_global_norm(unclipped_grads, 1.0)
 
 			self.grads = []
 			self.placeholder_grads = []
@@ -375,6 +375,9 @@ class ParallelWaveNet(object):
 					self.placeholder_grads.append(placeholder)
 
 			self.optimize = self.optimizer.apply_gradients(placeholder_grads_and_vars)
+
+			#self.optimize_fast = self.optimizer.minimize(self.loss, var_list=self.network_params)
+			self.optimize_fast = self.optimizer.apply_gradients(zip(clipped_grads, var_list))
 
 
 			tf.add_to_collection('Inputs', self.inputs)
@@ -559,6 +562,11 @@ class ParallelWaveNet(object):
 
 		return entropies
 
+	def getEntropy_fast(self, sess, inputs, conditions, encoding):
+		return sess.run(self.entropy, feed_dict={self.inputs: inputs, self.conditions: conditions,
+				self.encoding: encoding})
+
+
 	def train(self, sess, inputs, conditions, encoding, truth):
 
 		num_inputs = inputs.shape[0]
@@ -585,6 +593,12 @@ class ParallelWaveNet(object):
 		sess.run(self.optimize, feed_dict=feed_dict)
 
 		return mean_loss, mean_power_loss
+
+	def train_fast(self, sess, inputs, conditions, encoding, truth):
+		_, loss, power_loss = sess.run([self.optimize_fast, self.loss, self.power_loss], feed_dict={self.inputs: inputs, self.conditions: conditions,
+				self.encoding: encoding, self.inputs_truth: truth})
+
+		return loss, power_loss
 
 	def encode(self, sess, inputs, conditions):
 		#sess = tf.get_default_session()
