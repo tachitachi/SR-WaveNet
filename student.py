@@ -28,12 +28,12 @@ if __name__ == '__main__':
 	num_steps = 1000000
 	print_steps = 25
 
-	#audio_data = AudioData()
-	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size)
-	num_samples = 64000
+	num_samples = 16384
 	num_classes = 128
 
+	#audio_data = AudioData()
+	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
@@ -69,23 +69,22 @@ if __name__ == '__main__':
 
 				encoding = student.encode(sess, x, y) 
 
-				num_random_samples = 1
+				num_random_samples = 3
 
-				#encoding = np.tile(encoding, [num_random_samples, 1, 1])
-				#y = np.tile(y, [num_random_samples, 1])
+				encoding = np.tile(encoding, [num_random_samples, 1, 1])
+				y_stack = np.tile(y, [num_random_samples, 1])
 
 				noise = np.random.logistic(0, 1, [num_random_samples, num_samples])
 
-				#teacher_logits = teacher.
-				entropy = student.getEntropy(sess, noise, y, encoding)
-
 				# Train multiple times on different samples
-				loss, power_loss = student.train(sess, noise, y, encoding, x)
+				loss, power_loss = student.train_fast(sess, noise, y_stack, encoding, x)
 
 				if global_step % print_steps == 0:
+					#teacher_logits = teacher.
+					entropy = student.getEntropy_fast(sess, noise, y_stack, encoding)
 					print('Step: {:6d} | Entropy: {} | Power Loss: {:.4f} | Total Loss: {:.4f}'.format(global_step, str(entropy), power_loss, loss))
 
-					output = student.generate(sess, noise, y, encoding)
+					output = student.generate(sess, noise, y_stack, encoding)
 
 					regen = student.reconstruct(sess, x, y)
 
@@ -103,18 +102,18 @@ if __name__ == '__main__':
 					plt.plot(np.arange(num_samples), output[0])
 
 
-#					plt.subplot(4, 2, 5)
-#					plt.plot(np.arange(num_samples), noise[1])
-#
-#					plt.subplot(4, 2, 6)
-#					plt.plot(np.arange(num_samples), output[1])
+					plt.subplot(4, 2, 5)
+					plt.plot(np.arange(num_samples), noise[1])
+
+					plt.subplot(4, 2, 6)
+					plt.plot(np.arange(num_samples), output[1])
 
 
-#					plt.subplot(4, 2, 7)
-#					plt.plot(np.arange(num_samples), noise[2])
-#
-#					plt.subplot(4, 2, 8)
-#					plt.plot(np.arange(num_samples), output[2])
+					plt.subplot(4, 2, 7)
+					plt.plot(np.arange(num_samples), noise[2])
+
+					plt.subplot(4, 2, 8)
+					plt.plot(np.arange(num_samples), output[2])
 
 					if not os.path.isdir(os.path.join(args.student, 'figures')):
 						os.makedirs(os.path.join(args.student, 'figures'))
