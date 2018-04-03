@@ -29,14 +29,17 @@ if __name__ == '__main__':
 	num_steps = 1000000
 	print_steps = 100
 
+	use_condition = False
+
 	last_checkpoint_time = time.time()
 
 	num_samples = 16384
-	num_classes = 128
+	num_classes = 128 if use_condition else 0
 
 	#audio_data = AudioData()
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
+	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60.tfrecord'), batch_size, num_samples)
 
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
@@ -57,6 +60,9 @@ if __name__ == '__main__':
 			for global_step in range(args.start, num_steps):
 
 				x, y = audio_data.next()
+
+				if not use_condition:
+					y = None
 
 				loss = teacher.train(x, y)
 
@@ -97,6 +103,9 @@ if __name__ == '__main__':
 			for global_step in range(10):
 				x, y = audio_data.next()
 
+				if not use_condition:
+					y = None
+
 				regen = teacher.reconstruct(x, y)
 
 				wavfile.write('test_wav_{}.wav'.format(global_step), 16000, x[0])
@@ -117,6 +126,9 @@ if __name__ == '__main__':
 			for count in range(10):
 
 				x, y = audio_data.next()
+
+				if not use_condition:
+					y = None
 				#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
 
 				encoding = teacher.encode(x, y)
@@ -125,7 +137,7 @@ if __name__ == '__main__':
 
 
 
-				x_so_far = teacher.reconstruct_with_encoding(x_so_far, y, encoding)
+				x_so_far = teacher.reconstruct_with_encoding(x_so_far, encoding, y)
 
 				print(x_so_far, x_so_far.shape)
 

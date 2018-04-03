@@ -158,10 +158,13 @@ class WaveNetAutoEncoder(object):
 	def createDecoder(self, truth, encoding, conditions, reuse=False):
 		with tf.variable_scope('Decoder', reuse=reuse):
 
-			# concatenate the condition to the encoding
-			c = tf.expand_dims(conditions, 1)
-			c = tf.tile(c, [1, tf.shape(encoding)[1], 1])
-			encoding_w_condition = tf.concat([encoding, c], axis=2)
+			if self.condition_size > 0:
+				# concatenate the condition to the encoding
+				c = tf.expand_dims(conditions, 1)
+				c = tf.tile(c, [1, tf.shape(encoding)[1], 1])
+				encoding_w_condition = tf.concat([encoding, c], axis=2)
+			else:
+				encoding_w_condition = encoding
 
 			skip_layers_decoder = []
 
@@ -236,32 +239,50 @@ class WaveNetAutoEncoder(object):
 		return False
 
 
-	def train(self, inputs, conditions):
+	def train(self, inputs, conditions=None):
 		sess = tf.get_default_session()
-		_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.inputs_truth: inputs, self.conditions: conditions})
+		if conditions:
+			_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.inputs_truth: inputs, self.conditions: conditions})
+		else:
+			_, loss = sess.run([self.optimize, self.loss], feed_dict={self.inputs: inputs, self.inputs_truth: inputs})
 		return loss
 
-	def encode(self, inputs, conditions):
+	def encode(self, inputs, conditions=None):
 		sess = tf.get_default_session()
-		return sess.run(self.encoding, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		if conditions:
+			return sess.run(self.encoding, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		else:
+			return sess.run(self.encoding, feed_dict={self.inputs: inputs})
 
-	def reconstruct(self, inputs, conditions):
+	def reconstruct(self, inputs, conditions=None):
 		sess = tf.get_default_session()
-		return sess.run(self.out, feed_dict={self.inputs: inputs, self.inputs_truth: inputs, self.conditions: conditions})
+		if conditions:
+			return sess.run(self.out, feed_dict={self.inputs: inputs, self.inputs_truth: inputs, self.conditions: conditions})
+		else:
+			return sess.run(self.out, feed_dict={self.inputs: inputs, self.inputs_truth: inputs})
 
-	def reconstruct_with_encoding(self, inputs, conditions, encoding):
+	def reconstruct_with_encoding(self, inputs, encoding, conditions=None):
 		sess = tf.get_default_session()
-		return sess.run(self.out_from_encoding, feed_dict={self.inputs_truth: inputs, self.conditions: conditions,
-			self.encoding_isolated: encoding})
+		if conditions:
+			return sess.run(self.out_from_encoding, feed_dict={self.inputs_truth: inputs, self.conditions: conditions,
+				self.encoding_isolated: encoding})
+		else:
+			return sess.run(self.out_from_encoding, feed_dict={self.inputs_truth: inputs, self.encoding_isolated: encoding})
 
-	def mu_law(self, inputs, conditions):
+	def mu_law(self, inputs, conditions=None):
 		sess = tf.get_default_session()
-		return sess.run(self.targets, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		if conditions:
+			return sess.run(self.targets, feed_dict={self.inputs: inputs, self.conditions: conditions})
+		else:
+			return sess.run(self.targets, feed_dict={self.inputs: inputs})
 
-	def get_logits(self, inputs, conditions, encoding):
+	def get_logits(self, inputs, encoding, conditions=None):
 		sess = tf.get_default_session()
-		return sess.run(self.logits_from_encoding, feed_dict={self.inputs_truth: inputs, self.conditions: conditions,
-			self.encoding_isolated: encoding})
+		if conditions:
+			return sess.run(self.logits_from_encoding, feed_dict={self.inputs_truth: inputs, self.conditions: conditions,
+				self.encoding_isolated: encoding})
+		else:
+			return sess.run(self.logits_from_encoding, feed_dict={self.inputs_truth: inputs, self.encoding_isolated: encoding})
 
 
 
