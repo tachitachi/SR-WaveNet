@@ -289,7 +289,7 @@ class WaveNetAutoEncoder(object):
 
 class ParallelWaveNet(object):
 	def __init__(self, input_size, condition_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
-		latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001):
+		latent_channels=16, pool_stride=512, name='ParallelWaveNet', alpha=1.0, beta=1.0, gamma=1.0, learning_rate=0.001):
 
 		self.input_size = input_size
 		self.condition_size = condition_size
@@ -368,13 +368,13 @@ class ParallelWaveNet(object):
 
 			stft_diff = s1 - s2
 			# ||φ(g(z, c)) − φ(y)||2
-			self.power_loss = tf.reduce_sum(tf.norm(stft_diff) ** 2)
+			self.power_loss = tf.reduce_sum(tf.norm(stft_diff) ** 2) * gamma
 
 			# the output of the student network should flow through the teacher network
 			self.teacher_log_p = discretized_mix_logistic_loss(tf.clip_by_value(self.out, -1, 1), self.teacher_logits, sum_all=True)
-			h_pt_ps = tf.reduce_sum(self.teacher_log_p) # Sum of cross entropy
+			h_pt_ps = tf.reduce_sum(self.teacher_log_p) * beta # Sum of cross entropy
 			#h_ps = tf.reduce_mean(tf.log(self.s_tot) + 2.) # Expectation (mean?) of ln(s)
-			h_ps = self.entropy * 0.25
+			h_ps = self.entropy * alpha
 			ss = h_pt_ps - h_ps
 			self.loss = (ss + self.power_loss) / tf.cast(tf.shape(self.inputs)[0], tf.float32)
 

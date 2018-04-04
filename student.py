@@ -22,6 +22,10 @@ if __name__ == '__main__':
 	parser.add_argument('--train', action='store_true', help='Train student')
 	parser.add_argument('--test', action='store_true', help='Test student')
 
+	parser.add_argument('--entropy-weight', type=float, default=1.0, help='Weight of entropy term in loss function')
+	parser.add_argument('--cross-entropy-weight', type=float, default=1.0, help='Weight of cross entropy term in loss function')
+	parser.add_argument('--power-weight', type=float, default=1.0, help='Weight of power loss term in loss function')
+
 	args = parser.parse_args()
 
 	batch_size = 1
@@ -40,6 +44,10 @@ if __name__ == '__main__':
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
+   	entropy_weight = args.entropy_weight
+   	cross_entropy_weight = args.cross_entropy_weight
+   	power_weight = args.power_weight
+
     # input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 	# output_channels=256, latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
 	#teacher = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, num_mixtures=5, dilations=dilations, pool_stride=512)
@@ -49,7 +57,8 @@ if __name__ == '__main__':
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
 	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes,
-		dilations=dilations, teacher=args.teacher, dilation_channels=32, skip_channels=128, num_flows=4, pool_stride=512, learning_rate=1e-4)
+		dilations=dilations, teacher=args.teacher, dilation_channels=32, skip_channels=128, num_flows=4, pool_stride=512, 
+		alpha=entropy_weight, beta=cross_entropy_weight, gamma=power_weight, learning_rate=1e-4)
 
 
 	with tf.Session(graph=student.graph) as sess:
