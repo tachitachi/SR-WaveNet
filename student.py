@@ -21,26 +21,33 @@ if __name__ == '__main__':
 
 	parser.add_argument('--train', action='store_true', help='Train student')
 	parser.add_argument('--test', action='store_true', help='Test student')
+	
+	parser.add_argument('--latent-channels', type=int, default=32, help='Number of latent channel per time slice')
+	parser.add_argument('--pool-stride', type=int, default=128, help='Number of samples to use per time slice')
 
-	parser.add_argument('--entropy-weight', type=float, default=1.0, help='Weight of entropy term in loss function')
+	parser.add_argument('--batch-size', type=int, default=4, help='Batch size')
+
+	parser.add_argument('--entropy-weight', type=float, default=0.25, help='Weight of entropy term in loss function')
 	parser.add_argument('--cross-entropy-weight', type=float, default=1.0, help='Weight of cross entropy term in loss function')
 	parser.add_argument('--power-weight', type=float, default=1.0, help='Weight of power loss term in loss function')
 	parser.add_argument('--learning-rate', type=float, default=1e-4, help='Learning rate')
 
 	args = parser.parse_args()
 
-	batch_size = 1
+	batch_size = args.batch_size
 	num_steps = 1000000
 	print_steps = 25
 	use_condition = False
 
-	num_samples = 16384
+	sample_rate = 4000
+	num_samples = 4096 # 16384
 	num_classes = 128 if use_condition else 0
 
 	#audio_data = AudioData()
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60.tfrecord'), batch_size, num_samples)
+	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60.tfrecord'), batch_size, num_samples)
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60_4000.tfrecord'), batch_size, num_samples, audio_max_length=16000)
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
@@ -48,6 +55,9 @@ if __name__ == '__main__':
 	entropy_weight = args.entropy_weight
 	cross_entropy_weight = args.cross_entropy_weight
 	power_weight = args.power_weight
+	
+	latent_channels = args.latent_channels # 16
+	pool_stride = args.pool_stride # 512
 
     # input_size, condition_size, output_size, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 	# output_channels=256, latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001):
@@ -58,7 +68,8 @@ if __name__ == '__main__':
 	# input_size, condition_size, output_size, dilations, teacher, num_flows=2, filter_width=2, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='ParallelWaveNet', learning_rate=0.001
 	student = ParallelWaveNet(input_size=num_samples, condition_size=num_classes,
-		dilations=dilations, teacher=args.teacher, dilation_channels=32, skip_channels=128, num_flows=4, pool_stride=512, 
+		dilations=dilations, teacher=args.teacher, dilation_channels=32, skip_channels=128, num_flows=4, 
+		latent_channels=latent_channels, pool_stride=pool_stride, 
 		alpha=entropy_weight, beta=cross_entropy_weight, gamma=power_weight, learning_rate=args.learning_rate)
 
 
@@ -83,12 +94,14 @@ if __name__ == '__main__':
 
 				encoding = student.encode(sess, x, y) 
 
-				num_random_samples = 3
+				num_random_samples = batch_size
 
-				encoding = np.tile(encoding, [num_random_samples, 1, 1])
-				y_stack = np.tile(y, [num_random_samples, 1]) if y else None
+				#encoding = np.tile(encoding, [num_random_samples, 1, 1])
+				#y_stack = np.tile(y, [num_random_samples, 1]) if y else None
+				y_stack = y
 
-				noise = np.random.logistic(0, 1, [num_random_samples, num_samples])
+				#noise = np.random.logistic(0, 1, [num_random_samples, num_samples])
+				noise = np.random.logistic(0, 1, [batch_size, num_samples])
 
 				# Train multiple times on different samples
 				loss, power_loss = student.train_fast(sess, noise, x, encoding, y_stack)
@@ -102,32 +115,29 @@ if __name__ == '__main__':
 
 					regen = student.reconstruct(sess, x, y)
 
+					plt_count = 1
 					plt.figure(1, figsize=(10, 8))
-					plt.subplot(4, 2, 1)
-					plt.plot(np.arange(num_samples), x[0])
+					for i in range(batch_size):
+						plt.subplot(batch_size, 5, plt_count)
+						plt.plot(np.arange(num_samples), x[i])
+						plt_count += 1
+						
+						plt.subplot(batch_size, 5, plt_count)
+						plt.plot(np.arange(num_samples), regen[i])
+						plt_count += 1
+						
+						plt.subplot(batch_size, 5, plt_count)
+						plt.plot(np.arange(num_samples), noise[i])
+						plt_count += 1
+						
+						plt.subplot(batch_size, 5, plt_count)
+						plt.plot(np.arange(num_samples), output[i])
+						plt_count += 1
+						
+						plt.subplot(batch_size, 5, plt_count)
+						plt.imshow(encoding[i].transpose())
+						plt_count += 1
 
-					plt.subplot(4, 2, 2)
-					plt.plot(np.arange(num_samples), regen[0])
-
-					plt.subplot(4, 2, 3)
-					plt.plot(np.arange(num_samples), noise[0])
-
-					plt.subplot(4, 2, 4)
-					plt.plot(np.arange(num_samples), output[0])
-
-
-					plt.subplot(4, 2, 5)
-					plt.plot(np.arange(num_samples), noise[1])
-
-					plt.subplot(4, 2, 6)
-					plt.plot(np.arange(num_samples), output[1])
-
-
-					plt.subplot(4, 2, 7)
-					plt.plot(np.arange(num_samples), noise[2])
-
-					plt.subplot(4, 2, 8)
-					plt.plot(np.arange(num_samples), output[2])
 
 					if not os.path.isdir(os.path.join(args.student, 'figures')):
 						os.makedirs(os.path.join(args.student, 'figures'))
@@ -140,9 +150,9 @@ if __name__ == '__main__':
 						if not os.path.isdir(os.path.join(args.student, 'audio')):
 							os.makedirs(os.path.join(args.student, 'audio'))
 
-						wavfile.write(os.path.join(args.student, 'audio', 'test_wav_{}.wav'.format(global_step)), 16000, x[0])
-						wavfile.write(os.path.join(args.student, 'audio', 'regen_wav_{}.wav'.format(global_step)), 16000, regen[0])
-						wavfile.write(os.path.join(args.student, 'audio', 'parallel_wav_{}.wav'.format(global_step)), 16000, output[0])
+						wavfile.write(os.path.join(args.student, 'audio', 'test_wav_{}.wav'.format(global_step)), sample_rate, x[0])
+						wavfile.write(os.path.join(args.student, 'audio', 'regen_wav_{}.wav'.format(global_step)), sample_rate, regen[0])
+						wavfile.write(os.path.join(args.student, 'audio', 'parallel_wav_{}.wav'.format(global_step)), sample_rate, output[0])
 
 
 
