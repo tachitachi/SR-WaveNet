@@ -123,13 +123,15 @@ if __name__ == '__main__':
 				plt.show()
 
 		if args.test_slow:
-			for count in range(10):
+			for count in range(1):
 
 				x, y = audio_data.next()
 
 				if not use_condition:
 					y = None
 				#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
+				
+				wavfile.write('test_wav_{}.wav'.format(count), 16000, x[0])
 
 				encoding = teacher.encode(x, y)
 
@@ -141,15 +143,20 @@ if __name__ == '__main__':
 
 				print(x_so_far, x_so_far.shape)
 
-				for i in range(700):
+				for i in range(num_samples):
+					if i % 100 == 0:
+						print('{} out of {}'.format(i, num_samples))
 					x_so_far[:,i:] = 0
 					#print(x_so_far[:,:100])
 					#print(teacher.get_logits(x_so_far, y, encoding))
-					x_so_far[:, i] = teacher.reconstruct_with_encoding(x_so_far, y, encoding)[:, i]
+					x_so_far[:, i] = teacher.reconstruct_with_encoding(x_so_far, encoding)[:, i]
 
 
 				x_so_far[:,i:] = 0
 				regen = x_so_far
+
+
+				wavfile.write('regen_wav_{}.wav'.format(count), 16000, regen[0])
 
 				plt.figure(1)
 				plt.subplot(211)
@@ -160,3 +167,4 @@ if __name__ == '__main__':
 				plt.plot(np.arange(num_samples), regen[0])
 
 				plt.show()
+
