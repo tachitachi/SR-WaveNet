@@ -39,6 +39,7 @@ if __name__ == '__main__':
 
 	last_checkpoint_time = time.time()
 
+	sample_rate = 4000
 	num_samples = 4096 # 16384
 	num_classes = 128 if use_condition else 0
 
@@ -104,8 +105,8 @@ if __name__ == '__main__':
 						if not os.path.isdir(os.path.join(args.teacher, 'audio')):
 							os.makedirs(os.path.join(args.teacher, 'audio'))
 
-						wavfile.write(os.path.join(args.teacher, 'audio', 'test_wav_{}.wav'.format(global_step)), 16000, x[0])
-						wavfile.write(os.path.join(args.teacher, 'audio', 'regen_wav_{}.wav'.format(global_step)), 16000, regen[0])
+						wavfile.write(os.path.join(args.teacher, 'audio', 'test_wav_{}.wav'.format(global_step)), sample_rate, x[0])
+						wavfile.write(os.path.join(args.teacher, 'audio', 'regen_wav_{}.wav'.format(global_step)), sample_rate, regen[0])
 
 				# Checkpoint once per minute
 				teacher.save(args.teacher, global_step, force=False)
@@ -122,8 +123,8 @@ if __name__ == '__main__':
 
 				regen = teacher.reconstruct(x, y)
 
-				wavfile.write('test_wav_{}.wav'.format(global_step), 16000, x[0])
-				wavfile.write('regen_wav_{}.wav'.format(global_step), 16000, regen[0])
+				wavfile.write('test_wav_{}.wav'.format(global_step), sample_rate, x[0])
+				wavfile.write('regen_wav_{}.wav'.format(global_step), sample_rate, regen[0])
 
 
 				plt.figure(1)
@@ -145,7 +146,7 @@ if __name__ == '__main__':
 					y = None
 				#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
 
-				wavfile.write('test_wav_{}.wav'.format(count), 16000, x[0])
+				wavfile.write('test_wav_{}.wav'.format(count), sample_rate, x[0])
 
 				encoding = teacher.encode(x, y)
 
@@ -170,7 +171,7 @@ if __name__ == '__main__':
 				regen = x_so_far
 
 
-				wavfile.write('regen_wav_{}.wav'.format(count), 16000, regen[0])
+				wavfile.write('regen_wav_{}.wav'.format(count), sample_rate, regen[0])
 
 				plt.figure(1)
 				plt.subplot(211)
