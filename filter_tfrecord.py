@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import os
 from nsynth import NsynthDataReader
+import scipy.signal
 
 def _int64_feature(value):
   return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
@@ -12,9 +13,11 @@ def _float_feature(value):
 
 if __name__ == '__main__':
 
+	resample_factor = 4
+
 	data = NsynthDataReader('nsynth_data/nsynth-train.tfrecord', 1, num_samples=64000, reduced=False, shuffle=False, repeat=False)
 
-	writer = tf.python_io.TFRecordWriter(os.path.join('nsynth_data', 'filtered_note60.tfrecord'))
+	writer = tf.python_io.TFRecordWriter(os.path.join('nsynth_data', 'filtered_note60_4000.tfrecord'))
 
 	count = 0
 	try:
@@ -28,11 +31,17 @@ if __name__ == '__main__':
 			if d['pitch'][0][0] != 60:
 				continue
 
+			sample_rate = [int(d['sample_rate'][0][0] / resample_factor)]
+			audio = d['audio'][0]
+
+			if resample_factor != 1:
+				audio = scipy.signal.resample(audio, int(len(audio) / resample_factor))
+
 			feature = {
-				'sample_rate': _int64_feature(d['sample_rate'][0]),
+				'sample_rate': _int64_feature(sample_rate),
 				'note_str': _bytes_feature(d['note_str'][0]),
 				'qualities': _int64_feature(d['qualities'][0]),
-				'audio': _float_feature(d['audio'][0]),
+				'audio': _float_feature(audio),
 				'instrument_family': _int64_feature(d['instrument_family'][0]),
 				'pitch': _int64_feature(d['pitch'][0]),
 				'instrument_source': _int64_feature(d['instrument_source'][0]),

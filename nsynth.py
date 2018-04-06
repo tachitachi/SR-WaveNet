@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 
 class NsynthDataReader(object):
-	def __init__(self, filepath, batch_size, num_samples=16000, reduced=True, shuffle=True, repeat=True):
+	def __init__(self, filepath, batch_size, num_samples=16000, reduced=True, shuffle=True, repeat=True, audio_max_length=64000):
 
 
 		def _parse_function(example_proto):
@@ -12,7 +12,7 @@ class NsynthDataReader(object):
 				#"qualities_str": tf.FixedLenFeature([], dtype=tf.string),
 				"note_str": tf.FixedLenFeature([], dtype=tf.string),
 				"qualities": tf.FixedLenFeature([10], dtype=tf.int64),
-				"audio": tf.FixedLenFeature([64000], dtype=tf.float32),
+				"audio": tf.FixedLenFeature([audio_max_length], dtype=tf.float32),
 				"instrument_family": tf.FixedLenFeature([1], dtype=tf.int64),
 				"pitch": tf.FixedLenFeature([1], dtype=tf.int64),
 				"instrument_source": tf.FixedLenFeature([1], dtype=tf.int64),
