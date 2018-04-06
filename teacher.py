@@ -27,9 +27,11 @@ if __name__ == '__main__':
 	parser.add_argument('--latent-channels', type=int, default=32, help='Number of latent channel per time slice')
 	parser.add_argument('--pool-stride', type=int, default=128, help='Number of samples to use per time slice')
 
+	parser.add_argument('--batch-size', type=int, default=4, help='Batch size')
+
 	args = parser.parse_args()
 
-	batch_size = 1
+	batch_size = args.batch_size
 	num_steps = 1000000
 	print_steps = 100
 
