@@ -23,6 +23,10 @@ if __name__ == '__main__':
 	parser.add_argument('--test-fast', action='store_true', help='Test teacher (fast generation)')
 	parser.add_argument('--test-slow', action='store_true', help='Test teacher (slow generation)')
 
+
+	parser.add_argument('--latent-channels', type=int, default=32, help='Number of latent channel per time slice')
+	parser.add_argument('--pool-stride', type=int, default=128, help='Number of samples to use per time slice')
+
 	args = parser.parse_args()
 
 	batch_size = 1
@@ -33,13 +37,17 @@ if __name__ == '__main__':
 
 	last_checkpoint_time = time.time()
 
-	num_samples = 16384
+	num_samples = 4096 # 16384
 	num_classes = 128 if use_condition else 0
+
+	latent_channels = args.latent_channels # 16
+	pool_stride = args.pool_stride # 512
 
 	#audio_data = AudioData()
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'nsynth-train.tfrecord'), batch_size)
 	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'synthetic_valid.tfrecord'), batch_size, num_samples)
-	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60.tfrecord'), batch_size, num_samples)
+	#audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60.tfrecord'), batch_size, num_samples)
+	audio_data = NsynthDataReader(os.path.join('nsynth_data', 'filtered_note60_4000.tfrecord'), batch_size, num_samples, audio_max_length=16000)
 
 	dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
               1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
@@ -48,7 +56,7 @@ if __name__ == '__main__':
     # input_size, condition_size, num_mixtures, dilations, filter_width=2, encoder_channels=128, dilation_channels=32, skip_channels=256, 
 	# latent_channels=16, pool_stride=512, name='WaveNetAutoEncoder', learning_rate=0.001)
 	teacher = WaveNetAutoEncoder(input_size=num_samples, condition_size=num_classes, num_mixtures=5, dilations=dilations, 
-		skip_channels=128, pool_stride=512, learning_rate=1e-4)
+		latent_channels=latent_channels, skip_channels=128, pool_stride=pool_stride, learning_rate=1e-4)
 
 	with tf.Session(graph=teacher.graph) as sess:
 		sess.run(tf.global_variables_initializer())
@@ -70,13 +78,17 @@ if __name__ == '__main__':
 					print(global_step, loss)
 
 					regen = teacher.reconstruct(x, y)
+					encoding = teacher.encode(x, y)
 
 					plt.figure(1, figsize=(10, 8))
-					plt.subplot(2, 1, 1)
+					plt.subplot(3, 1, 1)
 					plt.plot(np.arange(num_samples), x[0])
 
-					plt.subplot(2, 1, 2)
+					plt.subplot(3, 1, 2)
 					plt.plot(np.arange(num_samples), regen[0])
+
+					plt.subplot(3, 1, 3)
+					plt.imshow(encoding[0].transpose())
 
 					if not os.path.isdir(os.path.join(args.teacher, 'figures')):
 						os.makedirs(os.path.join(args.teacher, 'figures'))
@@ -130,7 +142,7 @@ if __name__ == '__main__':
 				if not use_condition:
 					y = None
 				#x2, y2 = generate_wave_batch(batch_size, num_samples, combos=True)
-				
+
 				wavfile.write('test_wav_{}.wav'.format(count), 16000, x[0])
 
 				encoding = teacher.encode(x, y)
